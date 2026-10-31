@@ -13,6 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<GameProject> _projects = [];
     private CancellationTokenSource? _cts;
+    private readonly HashSet<string> _checkedRepairProjects = new(StringComparer.OrdinalIgnoreCase);
     public MainWindow()
     {
         InitializeComponent();
@@ -23,6 +24,7 @@ public partial class MainWindow : Window
     private void Scan()
     {
         _projects.Clear();
+        _checkedRepairProjects.Clear();
         try { foreach (var p in ProjectScanner.Scan(RootBox.Text)) _projects.Add(p); Log($"Found {_projects.Count} projects."); }
         catch (Exception ex) { Log($"Scan failed: {ex.Message}"); }
     }
@@ -298,28 +300,66 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed class RepairChoice
+    private void RepairGameCheckBox_Loaded(object sender, RoutedEventArgs e)
     {
-        public string Name { get; init; } = "";
-        public string Folder { get; init; } = "";
-        public bool Apply { get; set; }
+        if (sender is CheckBox { Tag: GameProject project } check)
+            check.IsChecked = _checkedRepairProjects.Contains(project.Path);
+    }
+
+    private void RepairGameCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { Tag: GameProject project } check) return;
+        if (check.IsChecked == true) _checkedRepairProjects.Add(project.Path);
+        else _checkedRepairProjects.Remove(project.Path);
+        UpdateRepairSelectionCount();
+    }
+
+    private void SelectAllRepairGames_Click(object sender, RoutedEventArgs e) => SetRepairGamesChecked(true);
+    private void ClearRepairGames_Click(object sender, RoutedEventArgs e) => SetRepairGamesChecked(false);
+
+    private void SetRepairGamesChecked(bool value)
+    {
+        _checkedRepairProjects.Clear();
+        if (value)
+            foreach (var project in _projects) _checkedRepairProjects.Add(project.Path);
+        ProjectsGrid.Items.Refresh();
+        UpdateRepairSelectionCount();
+    }
+
+    private void UpdateRepairSelectionCount()
+    {
+        if (RepairSelectionCount != null)
+            RepairSelectionCount.Text = $"Games checked for repairs: {_checkedRepairProjects.Count} / {_projects.Count}";
     }
 
     private async void BatchXnaFixes_Click(object sender, RoutedEventArgs e)
     {
-        string archive = RootBox.Text.Trim();
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
         if (!Directory.Exists(archive)) { Log($"Archive not found: {archive}"); return; }
-        string script = @"C:\PycharmProjects\xenia-game-manager\src\scripts\XnaRepairFunctions.ps1";
-        var games = Directory.EnumerateDirectories(archive)
-            .Where(folder => Directory.EnumerateFiles(folder, "*.csproj", SearchOption.AllDirectories)
-                .Any(file => !file.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj")))
-            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-            .Select(folder => new RepairChoice { Name = Path.GetFileName(folder), Folder = folder })
+        // Use ONLY the checkboxes in the main projects grid; group multiple projects
+        // belonging to the same game so the repair is applied once per game folder.
+        string archivePrefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var games = _projects
+            .Where(p => _checkedRepairProjects.Contains(p.Path))
+            .Select(p => Path.GetFullPath(p.Path))
+            .Where(path => path.StartsWith(archivePrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(path => {
+                string relative = Path.GetRelativePath(archive, path);
+                string topFolder = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+                return new { Name = topFolder, Folder = Path.Combine(archive, topFolder) };
+            })
+            .GroupBy(g => g.Folder, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (games.Count == 0) { Log("No game folders containing projects found."); return; }
+        if (games.Count == 0) {
+            MessageBox.Show(this, "Tick one or more games in the main Projects list first.", "Batch repairs");
+            return;
+        }
+        string script = @"C:\PycharmProjects\xenia-game-manager\src\scripts\XnaRepairFunctions.ps1";
 
         var dialog = new Window {
-            Title = "Batch XNA + SDK repairs", Width = 980, Height = 760,
+            Title = "Batch XNA + SDK repairs", Width = 980, Height = 650,
             MinWidth = 650, MinHeight = 450, Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17,24,39)),
@@ -328,11 +368,11 @@ public partial class MainWindow : Window
         var layout = new DockPanel { Margin = new Thickness(14) };
         dialog.Content = layout;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); layout.Children.Add(top);
-        top.Children.Add(new TextBlock { Text = "Choose games and XNA / SDK repairs (all games start unchecked)", FontSize = 17, Margin = new Thickness(0,0,0,10) });
-        var tools = new WrapPanel(); top.Children.Add(tools);
-        var all = new Button { Content = "Select all", Padding = new Thickness(10,5,10,5), Margin = new Thickness(0,0,8,8) };
-        var none = new Button { Content = "Select none", Padding = new Thickness(10,5,10,5), Margin = new Thickness(0,0,8,8) };
-        tools.Children.Add(all); tools.Children.Add(none);
+        top.Children.Add(new TextBlock { Text = "Repairs for games checked in the main window", FontSize = 17, Margin = new Thickness(0,0,0,10) });
+        top.Children.Add(new TextBlock {
+            Text = $"{games.Count} distinct game folder(s) selected. Game selection is controlled on the main screen.",
+            Margin = new Thickness(0,0,0,10), Foreground = Brushes.LightGray
+        });
         var fixers = new[] {
             "Repair-XnaStorageSelector", "Repair-XnaOpenContainer", "Repair-XnaStorageSave",
             "Repair-XnaStorageLoad", "Repair-XnaFileStream", "Repair-XnaColors",
@@ -372,38 +412,30 @@ public partial class MainWindow : Window
             Foreground = Brushes.White, Margin = new Thickness(0,6,0,8) };
         top.Children.Add(preview);
         var bottom = new StackPanel(); DockPanel.SetDock(bottom, Dock.Bottom); layout.Children.Add(bottom);
-        var count = new TextBlock { Margin = new Thickness(0,6,0,6), Foreground = Brushes.White };
-        bottom.Children.Add(count);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         bottom.Children.Add(actions);
         var cancel = new Button { Content = "Cancel", Padding = new Thickness(15,6,15,6), Margin = new Thickness(5) };
         var run = new Button { Content = "Run selected repairs", Padding = new Thickness(15,6,15,6), Margin = new Thickness(5) };
         actions.Children.Add(cancel); actions.Children.Add(run);
-        var grid = new DataGrid { AutoGenerateColumns = false, CanUserAddRows = false,
-            ItemsSource = games, Background = Brushes.White, Foreground = Brushes.Black };
-        grid.Columns.Add(new DataGridCheckBoxColumn { Header = "Yes / No", Binding = new System.Windows.Data.Binding(nameof(RepairChoice.Apply)) { Mode = System.Windows.Data.BindingMode.TwoWay, UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged }, Width = 90 });
-        grid.Columns.Add(new DataGridTextColumn { Header = "Game", Binding = new System.Windows.Data.Binding(nameof(RepairChoice.Name)), Width = new DataGridLength(1, DataGridLengthUnitType.Star), IsReadOnly = true });
-        layout.Children.Add(grid);
-        void UpdateCount() => count.Text = $"Selected: {games.Count(g => g.Apply)} / {games.Count}";
-        all.Click += (_, _) => { foreach (var game in games) game.Apply = true; grid.Items.Refresh(); UpdateCount(); };
-        none.Click += (_, _) => { foreach (var game in games) game.Apply = false; grid.Items.Refresh(); UpdateCount(); };
-        grid.CurrentCellChanged += (_, _) => UpdateCount();
+        var summary = new TextBlock {
+            Text = "Selected games: " + string.Join(", ", games.Take(8).Select(g => g.Name)) +
+                   (games.Count > 8 ? $" (+{games.Count - 8} more)" : ""),
+            TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray,
+            Margin = new Thickness(0,8,0,8)
+        };
+        layout.Children.Add(summary);
         cancel.Click += (_, _) => { dialog.DialogResult = false; };
         run.Click += (_, _) => {
-            grid.CommitEdit(DataGridEditingUnit.Cell, true);
-            grid.CommitEdit(DataGridEditingUnit.Row, true);
-            UpdateCount();
-            if (!games.Any(g => g.Apply) || !(fixerChecks.Any(c => c.IsChecked == true) || sdkChecks.Any(c => c.IsChecked == true))) {
+            if (games.Count == 0 || !(fixerChecks.Any(c => c.IsChecked == true) || sdkChecks.Any(c => c.IsChecked == true))) {
                 MessageBox.Show(dialog, "Select at least one game and one repair."); return;
             }
             if (preview.IsChecked != true && MessageBox.Show(dialog,
-                $"Modify source files for {games.Count(g => g.Apply)} games? Backups will be created.",
+                $"Modify source files for {games.Count} games? Backups will be created.",
                 "Confirm source modifications", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             dialog.DialogResult = true;
         };
-        UpdateCount();
         if (dialog.ShowDialog() != true) return;
-        var selectedGames = games.Where(g => g.Apply).ToList();
+        var selectedGames = games;
         var selectedFixers = fixerChecks.Where(c => c.IsChecked == true).Select(c => (string)c.Content).ToArray();
         if (selectedFixers.Length > 0 && !File.Exists(script)) {
             var chooser = new OpenFileDialog { Title = "Choose XnaRepairFunctions.ps1",

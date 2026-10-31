@@ -14,7 +14,7 @@
      <TextBlock Text="INDIE GAMES BUILD MANAGER" FontSize="23" FontWeight="Bold" Margin="4,0,0,12"/>
      <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
        <TextBlock Text="Archive directory" Margin="4"/>
-       <TextBox x:Name="RootBox" Grid.Column="1" Text="C:\source\Indie-Games\indie-game-archive"/>
+       <TextBox x:Name="RootBox" Grid.Column="1" Text="D:\indie-game-archive"/>
        <Button Grid.Column="2" Content="Browse..." Click="Browse_Click"/>
        <Button Grid.Column="3" Content="Scan projects" Click="Scan_Click"/>
      </Grid>
@@ -22,11 +22,20 @@
    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="1.25*"/></Grid.ColumnDefinitions>
      <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="260"/></Grid.RowDefinitions>
      <DockPanel Grid.Column="0" Margin="0,0,10,10">
-       <TextBlock DockPanel.Dock="Top" Text="Projects (select one or more)" FontSize="16" FontWeight="SemiBold" Margin="4,0,0,8"/>
+       <TextBlock DockPanel.Dock="Top" Text="Projects (tick games for batch repairs; select rows for build/run)" FontSize="16" FontWeight="SemiBold" Margin="4,0,0,8"/>
        <DataGrid x:Name="ProjectsGrid" AutoGenerateColumns="False" SelectionMode="Extended" IsReadOnly="True"
         Background="#1F2937" Foreground="#111827" RowBackground="#E5E7EB" AlternatingRowBackground="#D1D5DB"
         HeadersVisibility="Column" GridLinesVisibility="Horizontal">
         <DataGrid.Columns>
+         <DataGridTemplateColumn Header="Repair" Width="65">
+          <DataGridTemplateColumn.CellTemplate>
+           <DataTemplate>
+            <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Tag="{Binding}" Loaded="RepairGameCheckBox_Loaded" Checked="RepairGameCheckBox_Changed"
+                      Unchecked="RepairGameCheckBox_Changed"/>
+           </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+         </DataGridTemplateColumn>
          <DataGridTextColumn Header="Game / Project" Binding="{Binding Name}" Width="2*"/>
          <DataGridTextColumn Header="Framework" Binding="{Binding TargetFramework}" Width="*"/>
          <DataGridTextColumn Header="Platform" Binding="{Binding PlatformTarget}" Width="*"/>
@@ -78,7 +87,12 @@
        <TextBlock Text="Startup diagnostics" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
        <Button Content="Inject Startup Diagnostics" Click="InjectStartup_Click"/>
        <TextBlock Text="Adds runtime and architecture Console.WriteLine calls to Main(). Creates a source backup." TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>
-       <Button Content="Batch XNA + SDK Fixes (choose games)" Click="BatchXnaFixes_Click" Background="#2563EB" Margin="4,12,4,4"/>
+       <WrapPanel Margin="4,10,4,2">
+        <Button Content="Check all games" Click="SelectAllRepairGames_Click"/>
+        <Button Content="Clear checks" Click="ClearRepairGames_Click"/>
+       </WrapPanel>
+       <TextBlock x:Name="RepairSelectionCount" Text="Games checked for repairs: 0" Margin="8,2" Foreground="#93C5FD"/>
+       <Button Content="Batch XNA + SDK Fixes (checked games)" Click="BatchXnaFixes_Click" Background="#2563EB" Margin="4,12,4,4"/>
        <TextBlock Text="PowerShell fixer" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
        <TextBox x:Name="ScriptBox" Text="C:\PycharmProjects\xenia-game-manager\src\scripts\fix_sdk1005.ps1"/>
        <TextBlock Text="Script parameters (project path is passed as -ProjectName only if script supports it)" TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>
