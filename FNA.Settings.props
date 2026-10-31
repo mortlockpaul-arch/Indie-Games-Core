@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <!-- Resolve the repository root from this props file -->
+    <FNARoot>$(MSBuildThisFileDirectory)</FNARoot>
+
+    <!-- Prefer the runtime architecture when specified -->
+    <FNANativePlatform Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</FNANativePlatform>
+    <FNANativePlatform Condition="'$(RuntimeIdentifier)' == 'win-x86'">x86</FNANativePlatform>
+
+    <!-- Otherwise use the build platform -->
+    <FNANativePlatform Condition="'$(FNANativePlatform)' == '' and '$(PlatformTarget)' == 'x64'">x64</FNANativePlatform>
+    <FNANativePlatform Condition="'$(FNANativePlatform)' == '' and '$(PlatformTarget)' == 'x86'">x86</FNANativePlatform>
+
+    <!-- Default AnyCPU to x64 on your Windows setup -->
+    <FNANativePlatform Condition="'$(FNANativePlatform)' == ''">x64</FNANativePlatform>
+
+    <!-- Override the existing FNA native platform selection -->
+    <CurrentPlatform>$(FNANativePlatform)</CurrentPlatform>
+
+    <!-- Canonical native SDL3 path -->
+    <FNASDL3Path>$(FNARoot)SDL3\lib\$(FNANativePlatform)\SDL3.dll</FNASDL3Path>
+  </PropertyGroup>
+
+  <Target Name="CopyFNACorrectSDL3"
+          AfterTargets="Build"
+          Condition="Exists('$(FNASDL3Path)')">
+
+    <Message Importance="High"
+             Text="FNA SDL3: $(FNANativePlatform) => $(FNASDL3Path)" />
+
+    <Copy SourceFiles="$(FNASDL3Path)"
+          DestinationFiles="$(TargetDir)SDL3.dll"
+          SkipUnchangedFiles="true" />
+
+  </Target>
+
+</Project>

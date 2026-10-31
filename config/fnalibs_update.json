@@ -1,0 +1,36 @@
+{
+  "last_checked": "2026-10-28T19:27:39+00:00",
+  "latest_artifact": {
+    "id": 12790203028,
+    "name": "fnalibs",
+    "created_at": "2026-10-28T03:50:12Z",
+    "archive_download_url": "https://api.github.com/repos/FNA-XNA/fnalibs-dailies/actions/artifacts/12790203028/zip",
+    "size_in_bytes": 11470274
+  },
+  "installed_artifact_id": 12545852238,
+  "installed_artifact_name": "fnalibs",
+  "artifact_created_at": "2026-10-24T03:08:44Z",
+  "last_updated": "2026-10-24T16:52:52+00:00",
+  "installed_files": [
+    "D3D12/D3D12Core.dll",
+    "README.txt",
+    "lib64/libFAudio.so.0",
+    "lib64/libFNA3D.so.0",
+    "lib64/libSDL3.so.0",
+    "lib64/libtheorafile.so",
+    "libaarch64/libFAudio.so.0",
+    "libaarch64/libFNA3D.so.0",
+    "libaarch64/libSDL3.so.0",
+    "libaarch64/libtheorafile.so",
+    "x64/FAudio.dll",
+    "x64/FNA3D.dll",
+    "x64/SDL3.dll",
+    "x64/libtheorafile.dll",
+    "x86/FAudio.dll",
+    "x86/FNA3D.dll",
+    "x86/SDL3.dll",
+    "x86/libtheorafile.dll"
+  ],
+  "installed_file_count": 18,
+  "install_directory": "C:\\source\\Indie-Games\\fnalibs"
+}

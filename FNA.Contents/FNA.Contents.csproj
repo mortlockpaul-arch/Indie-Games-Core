@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>Library</OutputType>
+		<TargetFramework>net9.0-windows</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Platforms>x86;x64;AnyCPU</Platforms>
+		<DebugSymbols>true</DebugSymbols>
+		<DebugType>embedded</DebugType>
+		<LangVersion>13.0</LangVersion>
+		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+		<CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<PublishSingleFile>true</PublishSingleFile>
+	</PropertyGroup>
+
+
+	<!-- Select the architecture from the build platform or RID -->
+	<PropertyGroup>
+		<CurrentPlatform Condition="'$(Platform)' == 'x86' or '$(RuntimeIdentifier)' == 'win-x86'">x86</CurrentPlatform>
+		<CurrentPlatform Condition="'$(Platform)' == 'x64' or '$(RuntimeIdentifier)' == 'win-x64'">x64</CurrentPlatform>
+
+		<CurrentPlatform Condition="'$(CurrentPlatform)' == ''">x64</CurrentPlatform>
+
+		<PlatformTarget Condition="'$(CurrentPlatform)' == 'x86'">x86</PlatformTarget>
+		<PlatformTarget Condition="'$(CurrentPlatform)' == 'x64'">x64</PlatformTarget>
+	</PropertyGroup>
+
+	<!-- Remove native DLLs from default SDK content handling -->
+	<ItemGroup>
+		<None Remove="x86\**\*" />
+		<None Remove="x64\**\*" />
+		<Content Remove="x86\**\*" />
+		<Content Remove="x64\**\*" />
+	</ItemGroup>
+
+	<!-- Copy only native DLLs matching the selected architecture -->
+	<Target Name="CopyCorrectFNANatives" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+
+		<ItemGroup>
+			<FNANativeDll Include="$(MSBuildProjectDirectory)\$(CurrentPlatform)\*.dll" />
+		</ItemGroup>
+
+		<Copy SourceFiles="@(FNANativeDll)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" Condition="'@(FNANativeDll)' != ''" />
+
+		<Message Importance="High" Text="Copied $(CurrentPlatform) native DLLs to $(TargetDir)" />
+	</Target>
+
+	<Target Name="ShowPlatform" BeforeTargets="Build">
+		<Message Importance="High" Text="PlatformTarget=$(PlatformTarget), CurrentPlatform=$(CurrentPlatform)" />
+	</Target>
+	<ItemGroup>
+		<Reference Update="System">
+			<SpecificVersion>True</SpecificVersion>
+		</Reference>
+	</ItemGroup>
+	<ItemGroup>
+		<Reference Update="System.Data">
+			<SpecificVersion>True</SpecificVersion>
+		</Reference>
+	</ItemGroup>
+	<ItemGroup>
+		<Reference Update="System.Drawing">
+			<SpecificVersion>True</SpecificVersion>
+		</Reference>
+	</ItemGroup>
+	<ItemGroup>
+		<Reference Update="System.Xml">
+			<SpecificVersion>True</SpecificVersion>
+		</Reference>
+	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\FNA\FNA.Core.csproj" />
+	</ItemGroup>
+</Project>

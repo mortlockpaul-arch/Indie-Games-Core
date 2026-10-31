@@ -1,0 +1,95 @@
+<Window x:Class="IndieGames.BuildManager.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Indie Games Build Manager" Height="790" Width="1300" MinWidth="950" MinHeight="620"
+ Background="#111827" Foreground="#E5E7EB">
+ <Window.Resources>
+   <Style TargetType="Button"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="12,7"/><Setter Property="Background" Value="#374151"/><Setter Property="Foreground" Value="White"/></Style>
+   <Style TargetType="TextBox"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="7"/><Setter Property="Background" Value="#1F2937"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderBrush" Value="#4B5563"/></Style>
+   <Style TargetType="ComboBox"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="5"/></Style>
+   <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/></Style>
+ </Window.Resources>
+ <DockPanel Margin="16">
+   <StackPanel DockPanel.Dock="Top">
+     <TextBlock Text="INDIE GAMES BUILD MANAGER" FontSize="23" FontWeight="Bold" Margin="4,0,0,12"/>
+     <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <TextBlock Text="Archive directory" Margin="4"/>
+       <TextBox x:Name="RootBox" Grid.Column="1" Text="C:\source\Indie-Games\indie-game-archive"/>
+       <Button Grid.Column="2" Content="Browse..." Click="Browse_Click"/>
+       <Button Grid.Column="3" Content="Scan projects" Click="Scan_Click"/>
+     </Grid>
+   </StackPanel>
+   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="1.25*"/></Grid.ColumnDefinitions>
+     <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="260"/></Grid.RowDefinitions>
+     <DockPanel Grid.Column="0" Margin="0,0,10,10">
+       <TextBlock DockPanel.Dock="Top" Text="Projects (select one or more)" FontSize="16" FontWeight="SemiBold" Margin="4,0,0,8"/>
+       <DataGrid x:Name="ProjectsGrid" AutoGenerateColumns="False" SelectionMode="Extended" IsReadOnly="True"
+        Background="#1F2937" Foreground="#111827" RowBackground="#E5E7EB" AlternatingRowBackground="#D1D5DB"
+        HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+        <DataGrid.Columns>
+         <DataGridTextColumn Header="Game / Project" Binding="{Binding Name}" Width="2*"/>
+         <DataGridTextColumn Header="Framework" Binding="{Binding TargetFramework}" Width="*"/>
+         <DataGridTextColumn Header="Platform" Binding="{Binding PlatformTarget}" Width="*"/>
+         <DataGridTextColumn Header="Runtime" Binding="{Binding RuntimeIdentifier}" Width="*"/>
+         <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+        </DataGrid.Columns>
+       </DataGrid>
+     </DockPanel>
+     <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+      <StackPanel>
+       <TextBlock Text="Build configuration" FontSize="16" FontWeight="SemiBold" Margin="4,0,0,10"/>
+       <TextBlock Text="Action"/>
+       <ComboBox x:Name="ActionBox" SelectedIndex="0"><ComboBoxItem Content="Build"/><ComboBoxItem Content="Rebuild"/><ComboBoxItem Content="Clean"/><ComboBoxItem Content="Restore"/></ComboBox>
+       <TextBlock Text="Configuration"/>
+       <ComboBox x:Name="ConfigBox" IsEditable="True" Text="Debug"><ComboBoxItem Content="Debug"/><ComboBoxItem Content="Release"/></ComboBox>
+       <TextBlock Text="MSBuild Platform (solution/project platform)"/>
+       <ComboBox x:Name="PlatformBox" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox>
+       <TextBlock Text="PlatformTarget (compiler architecture)"/>
+        <ComboBox x:Name="TargetBox" IsEditable="True" Text="x64">
+            <ComboBoxItem Content="x64"/>
+            <ComboBoxItem Content="x86"/>
+            <ComboBoxItem Content="AnyCPU"/>
+        </ComboBox>
+        <TextBlock Text="Network Backend"/>
+        <ComboBox x:Name="NetworkBackendBox" SelectedIndex="0">
+        <ComboBoxItem Content="NetStub"/>
+        <ComboBoxItem Content="Steamworks"/>
+        <ComboBoxItem Content="LiteNetLib" IsEnabled="False"/>
+        </ComboBox>
+        
+       <TextBlock Text="Target framework (optional override)"/>
+       <TextBox x:Name="FrameworkBox" Text=""/>
+       <TextBlock Text="Runtime identifier (optional override)"/>
+       <TextBox x:Name="RuntimeBox" Text=""/>
+       <TextBlock Text="DefineConstants (optional; semicolon-separated)"/>
+       <TextBox x:Name="DefineConstantsBox" Text="" ToolTip="Example: STEAMWORKS_WIN;TRACE. Overrides evaluated constants when set."/>
+       <TextBlock Text="Leave blank to use project-defined symbols. An override replaces existing constants." TextWrapping="Wrap" Foreground="#FBBF24" FontSize="11" Margin="4,0,4,8"/>
+       <CheckBox x:Name="NoRestoreBox" Content="Skip restore during build" Margin="6"/>
+       <CheckBox x:Name="UseVsBox" Content="Use Visual Studio MSBuild (path below)" Margin="6"/>
+       <TextBox x:Name="MsbuildPathBox" Text="" ToolTip="Full path to MSBuild.exe"/>
+       <WrapPanel>
+        <Button Content="Inspect properties" Click="Inspect_Click"/>
+        <Button Content="Detect Configuration Issues" Click="Detect_Click" Background="#2563EB"/>
+        <Button Content="Run Build" Click="Build_Click"/>
+        <Button x:Name="RunGameButton" Content="▶ Run Game" Width="120" Height="32" Margin="5,0" Click="RunGameButton_Click" ToolTip="Launch the selected compiled game" />
+        <Button Content="Install GameLogger" Width="150" Height="32" Margin="5,0" Click="InstallGameLoggerButton_Click" />
+        <Button Content="Cancel" Click="Cancel_Click"/>
+       </WrapPanel>
+       <TextBlock Text="Startup diagnostics" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <Button Content="Inject Startup Diagnostics" Click="InjectStartup_Click"/>
+       <TextBlock Text="Adds runtime and architecture Console.WriteLine calls to Main(). Creates a source backup." TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>
+       <Button Content="Batch XNA + SDK Fixes (choose games)" Click="BatchXnaFixes_Click" Background="#2563EB" Margin="4,12,4,4"/>
+       <TextBlock Text="PowerShell fixer" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <TextBox x:Name="ScriptBox" Text="C:\PycharmProjects\xenia-game-manager\src\scripts\fix_sdk1005.ps1"/>
+       <TextBlock Text="Script parameters (project path is passed as -ProjectName only if script supports it)" TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>
+       <Button Content="Run fixer for selected project" Click="Fixer_Click"/>
+      </StackPanel>
+     </ScrollViewer>
+     <DockPanel Grid.Row="1" Grid.ColumnSpan="2">
+       <TextBlock DockPanel.Dock="Top" Text="Live build / diagnostic output" FontSize="16" FontWeight="SemiBold" Margin="4,0,0,8"/>
+       <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="12"
+        VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+     </DockPanel>
+   </Grid>
+ </DockPanel>
+</Window>
