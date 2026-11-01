@@ -1,12 +1,16 @@
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using Microsoft.Win32;
 using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
+using Microsoft.Win32;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
+using System.Reflection.Metadata;
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using Mono.Cecil;
+using AssemblyDefinition = Mono.Cecil.AssemblyDefinition;
+
 namespace IndieGames.BuildManager;
 
 public partial class MainWindow : Window
@@ -18,9 +22,46 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ProjectsGrid.ItemsSource = _projects;
+        AudioFfmpegBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
+        WaveBankDecoderBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "vgmstream", "vgmstream-cli.exe");
         Scan();
+        ScanXnaReferences(
+    @"D:\indie-game-archive\$1 Zombie Game, The (World) (XBLIG)\584E07D1");
     }
-    private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(line + Environment.NewLine); LogBox.ScrollToEnd(); });
+
+public static void ScanXnaReferences(string folder)
+{
+    foreach (string file in Directory.GetFiles(folder, "*.dll"))
+    {
+        try
+        {
+            using var assembly = AssemblyDefinition.ReadAssembly(file);
+
+            var references = assembly.MainModule.AssemblyReferences
+                .Where(r => r.Name.StartsWith(
+                    "Microsoft.Xna.Framework",
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (references.Count == 0)
+                continue;
+
+            Console.WriteLine($"\n{Path.GetFileName(file)}");
+
+            foreach (var reference in references)
+            {
+                Console.WriteLine(
+                    $"  {reference.Name}, Version={reference.Version}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"Failed to inspect {Path.GetFileName(file)}: {ex.Message}");
+        }
+    }
+}
+private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(line + Environment.NewLine); LogBox.ScrollToEnd(); });
     private void Scan()
     {
         _projects.Clear();
@@ -300,6 +341,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private void InjectFnaVersions_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more projects."); return; }
+        foreach (var project in selected)
+        {
+            try { Log($"{project.Name}: {StartupDiagnosticsInjector.InjectVersions(project.Path)}"); }
+            catch (Exception ex) { Log($"{project.Name}: {ex.Message}"); }
+        }
+    }
+
     private void RepairGameCheckBox_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is CheckBox { Tag: GameProject project } check)
@@ -376,7 +428,7 @@ public partial class MainWindow : Window
         var fixers = new[] {
             "Repair-XnaStorageSelector", "Repair-XnaOpenContainer", "Repair-XnaStorageSave",
             "Repair-XnaStorageLoad", "Repair-XnaFileStream", "Repair-XnaColors",
-            "Repair-XnaSignedInGamerAvatar"
+            "Repair-XnaSignedInGamerAvatar", "Repair-XnaSpriteBatch"
         };
         top.Children.Add(new TextBlock { Text = "Fixers (select only those you want):", Margin = new Thickness(0,8,0,4) });
         var fixerPanel = new WrapPanel(); top.Children.Add(fixerPanel);
@@ -519,6 +571,174 @@ public partial class MainWindow : Window
                 catch (Exception ex) { failed++; Log($"FAILED: {game.Name}: {ex.Message}"); }
             }
             Log($"Batch complete. Successful: {succeeded}; failed: {failed}; preview: {whatIf}.");
+        });
+    }
+
+    private async void ConvertWaveBanks_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string decoder = WaveBankDecoderBox.Text.Trim();
+        if (!File.Exists(decoder)) { Log($"Wave bank decoder not found: {decoder}"); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        await ExecuteAsync(async token =>
+        {
+            foreach (string folder in folders)
+            {
+                token.ThrowIfCancellationRequested();
+                string content = Path.Combine(folder, "Content");
+                if (!Directory.Exists(content)) { Log($"SKIP: No Content folder: {folder}"); continue; }
+                Log($"=== Converting wave banks: {Path.GetFileName(folder)} ===");
+                var results = await WaveBankConverter.ConvertAsync(content, decoder, Log, token);
+                Log($"Wave banks: {results.Count(r => r.Status == "Converted")} converted, " +
+                    $"{results.Count(r => r.Status == "Skipped")} already PCM, {results.Count(r => r.Status == "Failed")} failed. " +
+                    "Rebuild the game to copy updated wave banks to bin.");
+            }
+        });
+    }
+
+    private async void ConvertXnbFonts_Click(object sender, RoutedEventArgs e)
+        => await ConvertGraphicsContentAsync(textures: false);
+
+    private async void ConvertXnbTextures_Click(object sender, RoutedEventArgs e)
+        => await ConvertGraphicsContentAsync(textures: true);
+
+    private async Task ConvertGraphicsContentAsync(bool textures)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string extractor = EffectsExtractorBox.Text.Trim();
+        if (!File.Exists(extractor)) { Log($"XNB extractor not found: {extractor}"); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        await ExecuteAsync(async token =>
+        {
+            foreach (string folder in folders)
+            {
+                token.ThrowIfCancellationRequested();
+                string content = Path.Combine(folder, "Content");
+                if (!Directory.Exists(content)) { Log($"SKIP: No Content folder: {folder}"); continue; }
+                string kind = textures ? "Textures" : "Fonts";
+                Log($"=== Converting {kind}: {Path.GetFileName(folder)} ===");
+                var results = await Task.Run(() => textures
+                    ? SpriteFontConverter.ConvertTextures(content, extractor, Log, token)
+                    : SpriteFontConverter.ConvertFonts(content, extractor, Log, token), token);
+                Log($"{kind}: {results.Count(r => r.Status == "Converted")} converted, " +
+                    $"{results.Count(r => r.Status == "Skipped")} already Windows, {results.Count(r => r.Status == "Failed")} failed. " +
+                    "Rebuild the game to copy updated content to bin.");
+            }
+        });
+    }
+
+    private async void ConvertXnbAudio_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string script = Path.Combine(AppContext.BaseDirectory, "scripts", "Convert-XnbAudio.ps1");
+        string extractor = EffectsExtractorBox.Text.Trim();
+        string ffmpeg = AudioFfmpegBox.Text.Trim();
+        foreach (string path in new[] { script, extractor, ffmpeg })
+            if (!File.Exists(path)) { Log($"Audio conversion dependency not found: {path}"); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        await ExecuteAsync(async token =>
+        {
+            foreach (string folder in folders)
+            {
+                token.ThrowIfCancellationRequested();
+                string content = Path.Combine(folder, "Content");
+                if (!Directory.Exists(content)) { Log($"SKIP: No Content folder: {folder}"); continue; }
+                Log($"=== Converting Songs and Sounds: {Path.GetFileName(folder)} ===");
+                int code = await ProcessRunner.RunAsync("powershell.exe",
+                    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script,
+                     "-ContentDirectory", content, "-ExtractorExe", extractor, "-FfmpegExe", ffmpeg, "-Install"],
+                    folder, Log, token);
+                Log(code == 0 ? "Audio converted. Rebuild the game to copy updated content to bin." :
+                    "Audio conversion had failures. Review the log and audio-conversion report.");
+            }
+        });
+    }
+
+    private async void ConvertXnbEffects_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+
+        string script = EffectsScriptBox.Text.Trim();
+        string extractor = EffectsExtractorBox.Text.Trim();
+        if (!File.Exists(script)) { Log($"Effect conversion script not found: {script}"); return; }
+        if (!File.Exists(extractor)) { Log($"XNB extractor not found: {extractor}"); return; }
+
+        // Group projects belonging to the same archive game to avoid duplicate conversion.
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        bool recurse = EffectsRecurseBox.IsChecked == true;
+        bool overwrite = EffectsOverwriteBox.IsChecked == true;
+        if (overwrite && MessageBox.Show(this,
+            $"Overwrite existing extracted effects in {folders.Count} selected game(s)?",
+            "Confirm overwrite", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+
+        await ExecuteAsync(async token =>
+        {
+            int success = 0, failed = 0, skipped = 0;
+            foreach (string folder in folders)
+            {
+                token.ThrowIfCancellationRequested();
+                string shaders = Path.Combine(folder, "Content", "Shaders");
+                string content = Directory.Exists(shaders) ? shaders : Path.Combine(folder, "Content");
+                if (!Directory.Exists(content))
+                {
+                    Log($"SKIP: No Content folder: {folder}"); skipped++; continue;
+                }
+                Log($"=== Converting XNB effects: {Path.GetFileName(folder)} ===");
+                Log($"Input: {content}");
+                // Explicit PowerShell array avoids -File argument-binding ambiguity.
+                static string Q(string value) => "'" + value.Replace("'", "''") + "'";
+                string command = "$ErrorActionPreference='Stop'; & " + Q(script) +
+                    " -InputPath " + Q(content) +
+                    " -ExtractorExe " + Q(extractor) +
+                    " -ExtractorArguments @('--input','{input}','--output','{output}','--loader','--parser','--extract')" +
+                    (recurse ? " -Recurse" : "") + (overwrite ? " -Overwrite" : "") +
+                    "; if (-not $?) { exit 1 }";
+                string encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(command));
+                var args = new List<string> { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded };
+                try
+                {
+                    int code = await ProcessRunner.RunAsync("powershell.exe", args, folder, Log, token);
+                    if (code == 0) { success++; Log("Conversion finished."); }
+                    else { failed++; Log($"Conversion failed (exit {code}): {folder}"); }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { failed++; Log($"Conversion failed: {ex.Message}"); }
+            }
+            Log($"XNB effects complete: {success} succeeded, {failed} failed, {skipped} skipped.");
         });
     }
 

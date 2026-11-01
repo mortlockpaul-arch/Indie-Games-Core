@@ -10,7 +10,6 @@
 
     <ItemGroup>
 		<ProjectReference Include="..\..\FNA\FNA.Core.csproj" />
-		<ProjectReference Include="..\FNAWasm\FNA.Core.csproj" />
     </ItemGroup>
     
     

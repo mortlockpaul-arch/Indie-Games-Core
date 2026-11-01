@@ -6,6 +6,7 @@
  <Window.Resources>
    <Style TargetType="Button"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="12,7"/><Setter Property="Background" Value="#374151"/><Setter Property="Foreground" Value="White"/></Style>
    <Style TargetType="TextBox"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="7"/><Setter Property="Background" Value="#1F2937"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderBrush" Value="#4B5563"/></Style>
+   <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#F9FAFB"/></Style>
    <Style TargetType="ComboBox"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="5"/></Style>
    <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/></Style>
  </Window.Resources>
@@ -30,7 +31,7 @@
          <DataGridTemplateColumn Header="Repair" Width="65">
           <DataGridTemplateColumn.CellTemplate>
            <DataTemplate>
-            <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+            <CheckBox Foreground="#111827" HorizontalAlignment="Center" VerticalAlignment="Center"
                       Tag="{Binding}" Loaded="RepairGameCheckBox_Loaded" Checked="RepairGameCheckBox_Changed"
                       Unchecked="RepairGameCheckBox_Changed"/>
            </DataTemplate>
@@ -73,8 +74,8 @@
        <TextBlock Text="DefineConstants (optional; semicolon-separated)"/>
        <TextBox x:Name="DefineConstantsBox" Text="" ToolTip="Example: STEAMWORKS_WIN;TRACE. Overrides evaluated constants when set."/>
        <TextBlock Text="Leave blank to use project-defined symbols. An override replaces existing constants." TextWrapping="Wrap" Foreground="#FBBF24" FontSize="11" Margin="4,0,4,8"/>
-       <CheckBox x:Name="NoRestoreBox" Content="Skip restore during build" Margin="6"/>
-       <CheckBox x:Name="UseVsBox" Content="Use Visual Studio MSBuild (path below)" Margin="6"/>
+       <CheckBox x:Name="NoRestoreBox" Foreground="White" Margin="6"><CheckBox.Content><TextBlock Foreground="White" Text="Skip restore during build"/></CheckBox.Content></CheckBox>
+       <CheckBox x:Name="UseVsBox" Foreground="White" Margin="6"><CheckBox.Content><TextBlock Foreground="White" Text="Use Visual Studio MSBuild (path below)"/></CheckBox.Content></CheckBox>
        <TextBox x:Name="MsbuildPathBox" Text="" ToolTip="Full path to MSBuild.exe"/>
        <WrapPanel>
         <Button Content="Inspect properties" Click="Inspect_Click"/>
@@ -86,6 +87,8 @@
        </WrapPanel>
        <TextBlock Text="Startup diagnostics" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
        <Button Content="Inject Startup Diagnostics" Click="InjectStartup_Click"/>
+       <Button Content="Inject FNA Version Logging" Click="InjectFnaVersions_Click"/>
+       <TextBlock Text="Adds framework, FNA3D, FAudio and SDL version logging to Main(). Creates a separate source backup; rebuild the game afterward." TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>
        <TextBlock Text="Adds runtime and architecture Console.WriteLine calls to Main(). Creates a source backup." TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>
        <WrapPanel Margin="4,10,4,2">
         <Button Content="Check all games" Click="SelectAllRepairGames_Click"/>
@@ -93,6 +96,33 @@
        </WrapPanel>
        <TextBlock x:Name="RepairSelectionCount" Text="Games checked for repairs: 0" Margin="8,2" Foreground="#93C5FD"/>
        <Button Content="Batch XNA + SDK Fixes (checked games)" Click="BatchXnaFixes_Click" Background="#2563EB" Margin="4,12,4,4"/>
+       <TextBlock Text="XNB Effect Conversion" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <TextBlock Text="Converts effects for the selected game rows (Content\Shaders if present, otherwise Content)." TextWrapping="Wrap" Foreground="#9CA3AF" Margin="4"/>
+       <TextBlock Text="Convert-XnbEffects.ps1 path"/>
+       <TextBox x:Name="EffectsScriptBox" Text="C:\PycharmProjects\xenia-game-manager\src\scripts\Convert-XnbEffects.ps1"/>
+       <TextBlock Text="XnbExtractor.exe path"/>
+       <TextBox x:Name="EffectsExtractorBox" Text="C:\source\xnb-extractor\bin\x64\Release\net9.0-windows\XnbExtractor.exe"/>
+       <WrapPanel Margin="4,4,4,4">
+        <CheckBox x:Name="EffectsRecurseBox" Foreground="White" IsChecked="True" Margin="6"><CheckBox.Content><TextBlock Foreground="White" Text="Recurse"/></CheckBox.Content></CheckBox>
+        <CheckBox x:Name="EffectsOverwriteBox" Foreground="White" IsChecked="False" Margin="6"><CheckBox.Content><TextBlock Foreground="White" Text="Overwrite"/></CheckBox.Content></CheckBox>
+       </WrapPanel>
+       <Button Content="Convert XNB Effects (selected games)" Click="ConvertXnbEffects_Click" Background="#2563EB"/>
+       <TextBlock Text="XNB Audio Conversion" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <TextBlock Text="Converts songs to Windows XNB + Ogg and sound effects to PCM Windows XNB. Includes audio in Songs, Sounds and directly under Content. Uses the XNB extractor path above. Backs up originals; rebuild games afterward." TextWrapping="Wrap" Foreground="#9CA3AF" Margin="4"/>
+       <TextBlock Text="FFmpeg executable"/>
+       <TextBox x:Name="AudioFfmpegBox"/>
+       <Button Content="Convert XNB Audio (selected games)" Click="ConvertXnbAudio_Click" Background="#2563EB"/>
+       <TextBlock Text="XACT Wave Bank Conversion" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <TextBlock Text="Converts supported .xwb banks throughout Content to PCM, preserving bank names, entry order and loop points. Creates backups and a report; skips banks already using Windows PCM. Compact banks are reported as unsupported. Rebuild games afterward." TextWrapping="Wrap" Foreground="#9CA3AF" Margin="4"/>
+       <TextBlock Text="vgmstream executable"/>
+       <TextBox x:Name="WaveBankDecoderBox"/>
+       <Button Content="Convert Wave Banks (selected games)" Click="ConvertWaveBanks_Click" Background="#2563EB"/>
+       <TextBlock Text="XNB Font Conversion" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <TextBlock Text="Finds SpriteFonts throughout Content and converts their embedded textures and glyph data to Windows XNB. Uses the XNB extractor path above. Backs up originals and skips fonts already in Windows format; rebuild games afterward." TextWrapping="Wrap" Foreground="#9CA3AF" Margin="4"/>
+       <Button Content="Convert XNB Fonts (selected games)" Click="ConvertXnbFonts_Click" Background="#2563EB"/>
+       <TextBlock Text="XNB Texture Conversion" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
+       <TextBlock Text="Finds Texture2D assets throughout Content and converts supported Xbox textures to Windows XNB. Uses the XNB extractor path above. Backs up originals and skips existing Windows textures; rebuild games afterward." TextWrapping="Wrap" Foreground="#9CA3AF" Margin="4"/>
+       <Button Content="Convert XNB Textures (selected games)" Click="ConvertXnbTextures_Click" Background="#2563EB"/>
        <TextBlock Text="PowerShell fixer" FontSize="16" FontWeight="SemiBold" Margin="4,16,0,4"/>
        <TextBox x:Name="ScriptBox" Text="C:\PycharmProjects\xenia-game-manager\src\scripts\fix_sdk1005.ps1"/>
        <TextBlock Text="Script parameters (project path is passed as -ProjectName only if script supports it)" TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="4"/>

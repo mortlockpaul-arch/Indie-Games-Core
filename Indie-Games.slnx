@@ -1,4 +1,4 @@
-
+<?xml version='1.0' encoding='utf-8'?>
 <Solution>
   <Configurations>
     <Configuration Name="Debug" />
@@ -18,7 +18,6 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
-    
   </Folder>
   <Folder Name="/Library-Projects/">
     <Project Path="FNA.AvatarCompat/FNA.AvatarCompat.csproj" />
@@ -59,15 +58,30 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
+    <Project Path="tools/XnaAssemblyRedirector/XnaAssemblyRedirector.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path="FNA.Settings.props" />
     <File Path="global.json" />
-    
     <File Path="reports/xna-network-api-details.csv" />
     <File Path="reports/xna-network-summary.csv" />
     <File Path="xna-network-apis.csv" />
   </Folder>
+  <Folder Name="/indie-game-archive/">
+    <Project Path="D:/indie-game-archive/$1 Zombie Game, The (World) (XBLIG)/$1 Zombie Game, The (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/Head Shot Z (World) (XBLIG)/Head Shot Z (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/Appease the Spider (World) (XBLIG)/Appease the Spider (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+  </Folder>
+  <Folder Name="/Reference-Projects/" />
   <Project Path="RetroShelf/RetroShelf.csproj">
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />
