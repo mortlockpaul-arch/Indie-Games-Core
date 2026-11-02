@@ -3,9 +3,14 @@
 A starter desktop application for discovering game projects and diagnosing configuration/platform mismatches.
 
 ## Run
+
+Open `Indie-Games.slnx` in Visual Studio. Build Manager is the solution's default startup project.
+If Visual Studio has already saved a different startup selection, right-click **IndieGames.BuildManager** and choose **Set as Startup Project** once.
+
+From the repository root:
+
 ```powershell
-cd C:\source\Indie-Games\IndieGames.BuildManager
-dotnet run
+dotnet run --project .\IndieGames.BuildManager\IndieGames.BuildManager.csproj
 ```
 Requires Windows and .NET 10 SDK.
 

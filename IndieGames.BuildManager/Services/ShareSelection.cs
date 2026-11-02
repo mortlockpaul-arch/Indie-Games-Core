@@ -2,6 +2,26 @@ using System.IO;
 namespace IndieGames.BuildManager.Services;
 public sealed record ShareSelection(string Source, string PlayableGame, string Name)
 {
+    public static IReadOnlyList<string> SourceFolders(string archive)
+    {
+        string root=Path.GetFullPath(archive);
+        if (!Directory.Exists(root)) return [];
+        var folders=Directory.EnumerateDirectories(root).Where(folder=>(File.GetAttributes(folder)&FileAttributes.ReparsePoint)==0 && Directory.EnumerateFiles(folder,"*.csproj").Any()).ToList();
+        if (Directory.EnumerateFiles(root,"*.csproj").Any()) folders.Add(root);
+        return folders.OrderBy(Path.GetFileName,StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+    public static ShareSelection ForSource(string archive, string source, LibraryStorage storage)
+    {
+        string canonical=Path.Combine(source,Path.GetFileName(Path.TrimEndingDirectorySeparator(source))+".csproj");
+        bool Executable(string path)
+        {
+            try { return System.Xml.Linq.XDocument.Load(path).Descendants().Any(e=>e.Name.LocalName=="OutputType" && (e.Value.Trim().Equals("Exe",StringComparison.OrdinalIgnoreCase) || e.Value.Trim().Equals("WinExe",StringComparison.OrdinalIgnoreCase))); }
+            catch (System.Xml.XmlException) { return false; }
+        }
+        string project=File.Exists(canonical) ? canonical : Directory.EnumerateFiles(source,"*.csproj").OrderByDescending(Executable).ThenBy(p=>p,StringComparer.OrdinalIgnoreCase).FirstOrDefault()
+            ?? throw new IOException("The selected source folder has no active project.");
+        return ForProject(archive,project,storage);
+    }
     public static ShareSelection ForProject(string archive, string project, LibraryStorage storage)
     {
         string root=Path.TrimEndingDirectorySeparator(Path.GetFullPath(archive));

@@ -41,7 +41,13 @@ public partial class TorrentWindow : Window
     private bool _closing, _closed;
     private ProjectShareWindow? _shareWindow;
     private string _activity = "";
-    private string? _shareName;
+    private sealed record SourceOption(string Folder) { public string Name=>Path.GetFileName(Path.TrimEndingDirectorySeparator(Folder)); }
+    private string _selectedSourceFolder="";
+    private ShareSelection? _selectedShare;
+    private bool _loadingSourceChoices, _previewPending, _isPreviewOperation;
+    private int _previewRevision;
+    private readonly DispatcherTimer _previewTimer=new() { Interval=TimeSpan.FromMilliseconds(250) };
+    private string CurrentSource=>ShareFolderBox.SelectedValue as string ?? _selectedSourceFolder;
     private readonly List<TorrentProject> _createdShares=[];
     private int ShareKind
     {
@@ -59,12 +65,20 @@ public partial class TorrentWindow : Window
         ArchiveBox.Text = archiveRoot;
         GamesBox.Text = gamesRoot ?? LibraryStorage.Load().Games;
         GameFolderBox.Text = gameFolder ?? "";
-        ShareFolderBox.Text = selectedFolder ?? "";
+        _selectedSourceFolder = selectedFolder ?? "";
         CatalogueGrid.ItemsSource = _rows;
         _service = new ProjectTorrentService(stateDirectory ?? LibraryStorage.Load().TorrentCache);
         CacheNote.Text = "Packages and resume data: " + _service.StateDirectory;
         _timer.Tick += (_, _) => RefreshTransfers();
         _timer.Start();
+        _previewTimer.Tick += async (_,_) => {
+            _previewTimer.Stop();
+            if (_shareWindow == null || _loadingSourceChoices) return;
+            if (_operation != null) { _previewPending=true; return; }
+            _previewPending=false; _isPreviewOperation=true;
+            try { await PreviewShareAsync(); }
+            finally { _isPreviewOperation=false; if (_previewPending && _shareWindow != null) _previewTimer.Start(); }
+        };
     }
 
     private void Log(string text) { StatusBox.AppendText(text + Environment.NewLine); StatusBox.ScrollToEnd(); _shareWindow?.Log(text); _activity=text; PublishStatus(); }
@@ -76,9 +90,9 @@ public partial class TorrentWindow : Window
         _operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _shareWindow?.SetBusy(true);
         try { _operationTask = action(_operation.Token); await _operationTask; }
-        catch (OperationCanceledException) { Log("Operation cancelled. Partial downloads are kept for resume."); }
-        catch (Exception error) { Log(error.GetBaseException().Message); if (_shareWindow != null && _preview == null) ShareSummary.Text="Choose A Folder And Refresh The Preview"; }
-        finally { _operation.Dispose(); _operation = null; _operationTask = null; _shareWindow?.SetBusy(false); RefreshTransfers(); }
+        catch (OperationCanceledException) { if (!_isPreviewOperation) Log("Operation cancelled. Partial downloads are kept for resume."); }
+        catch (Exception error) { Log(error.GetBaseException().Message); if (_shareWindow != null && _preview == null) ShareSummary.Text=error.GetBaseException().Message; }
+        finally { _operation.Dispose(); _operation = null; _operationTask = null; _shareWindow?.SetBusy(false); RefreshTransfers(); if (_previewPending && _shareWindow != null) _previewTimer.Start(); }
     }
 
     private void ConfigureNetwork()
@@ -165,11 +179,16 @@ public partial class TorrentWindow : Window
         var dialog = new OpenFolderDialog { Title = "Choose archive download destination" };
         if (dialog.ShowDialog(this) == true) ArchiveBox.Text = dialog.FolderName;
     }
+    private void BrowseGames_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog=new OpenFolderDialog { Title="Choose playable games folder", InitialDirectory=GamesBox.Text.Trim() };
+        if(dialog.ShowDialog(this)==true) GamesBox.Text=dialog.FolderName;
+    }
     public void OpenShare(int kind, ShareSelection selection)
     {
         if (_operation != null) { Log("Wait for the current operation or cancel it."); return; }
         ShareKind=kind;
-        ShareFolderBox.Text=selection.Source; GameFolderBox.Text=selection.PlayableGame; _shareName=selection.Name;
+        _selectedSourceFolder=selection.Source; _selectedShare=selection; GameFolderBox.Text=selection.PlayableGame;
         ShowShare_Click(this,new RoutedEventArgs());
     }
     private void ShowShare_Click(object sender, RoutedEventArgs e)
@@ -182,9 +201,21 @@ public partial class TorrentWindow : Window
         _createdShares.Clear();
         var window=new ProjectShareWindow(this,form,()=>_operation != null,()=>_operation?.Cancel(),()=>ExportCreatedShares());
         _shareWindow=window;
-        window.Loaded += (_,_) => PreviewShare_Click(window,new RoutedEventArgs());
+        window.Loaded += async (_,_) => {
+            await RunAsync(async token=> {
+                _loadingSourceChoices=true; ShareFolderBox.IsEnabled=false;
+                try {
+                    string archive=ArchiveBox.Text.Trim(), selected=_selectedSourceFolder;
+                    var folders=await Task.Run(()=>ShareSelection.SourceFolders(archive),token);
+                    var options=folders.Concat(string.IsNullOrWhiteSpace(selected) ? [] : new[]{selected}).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Path.GetFileName,StringComparer.OrdinalIgnoreCase).Select(f=>new SourceOption(f)).ToArray();
+                    ShareFolderBox.ItemsSource=options;
+                    ShareFolderBox.SelectedValue=options.FirstOrDefault(o=>o.Folder.Equals(selected,StringComparison.OrdinalIgnoreCase))?.Folder ?? options.FirstOrDefault()?.Folder;
+                } finally { _loadingSourceChoices=false; ShareFolderBox.IsEnabled=true; }
+            });
+            SchedulePreview();
+        };
         try { window.ShowDialog(); }
-        finally { window.DetachForm(); ShareHost.Content=form; _shareWindow=null; }
+        finally { _previewTimer.Stop(); _previewPending=false; window.DetachForm(); ShareHost.Content=form; _shareWindow=null; }
     }
     private async void ExportCreatedShares()
     {
@@ -193,42 +224,57 @@ public partial class TorrentWindow : Window
         if (dialog.ShowDialog(_shareWindow ?? (Window)this) == true)
             await RunAsync(async token=> { await new TorrentCatalogue { Projects=_createdShares.ToList() }.SaveAsync(dialog.FileName,token); Log("Share catalogue saved: "+dialog.FileName); });
     }
-    private void BrowseShare_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFolderDialog { Title = "Choose the game's source and Content folder" };
-        if (dialog.ShowDialog(_shareWindow ?? (Window)this) == true) { ShareFolderBox.Text = dialog.FolderName; _shareName=null; }
-    }
     private void ShareKind_Changed(object sender, RoutedEventArgs e)
     {
         _preview=null; if (CreateShareButton != null) CreateShareButton.IsEnabled=false;
-        if (SourceShareRow != null) SourceShareRow.Visibility=ShareKind == 1 ? Visibility.Collapsed : Visibility.Visible;
         if (GameShareRow != null) GameShareRow.Visibility=ShareKind == 0 ? Visibility.Collapsed : Visibility.Visible;
-        if (_shareWindow != null && _operation == null) PreviewShare_Click(this,new RoutedEventArgs());
+        SchedulePreview();
     }
 
 
 
-    private void BrowseGame_Click(object sender, RoutedEventArgs e) { var d=new OpenFolderDialog { Title="Choose playable Windows game output" }; if(d.ShowDialog(_shareWindow ?? (Window)this)==true) GameFolderBox.Text=d.FolderName; }
-    private void ShareFolder_Changed(object sender, TextChangedEventArgs e)
+    private void ShareFolder_Changed(object sender, SelectionChangedEventArgs e)
     {
-        _preview = null;
-        if (CreateShareButton != null) CreateShareButton.IsEnabled = false;
+        if (_loadingSourceChoices) return;
+        _selectedSourceFolder=CurrentSource;
+        SchedulePreview();
     }
-    private async void PreviewShare_Click(object sender, RoutedEventArgs e)
-        => await RunAsync(async token =>
+    private void SchedulePreview()
+    {
+        _preview=null; _previewRevision++;
+        if (CreateShareButton != null) CreateShareButton.IsEnabled=false;
+        if (_shareWindow == null || _loadingSourceChoices) return;
+        ShareFilesBox.Clear(); ShareSummary.Text="Updating File Preview…";
+        GameFolderBox.Text="Detecting Build Output…";
+        if (_isPreviewOperation) _operation?.Cancel();
+        _previewPending=true; _previewTimer.Stop(); _previewTimer.Start();
+    }
+    private Task PreviewShareAsync()
+        => RunAsync(async token =>
         {
             _preview=null; CreateShareButton.IsEnabled=false;
             ShareFilesBox.Clear(); ShareSummary.Text="Preparing File Preview…";
             int kind = ShareKind;
-            string sourceFolder = ShareFolderBox.Text.Trim(), gameFolder = GameFolderBox.Text.Trim();
+            int revision=_previewRevision;
+            string sourceFolder = CurrentSource;
+            if (string.IsNullOrWhiteSpace(sourceFolder)) throw new IOException("No source projects were found in this archive.");
+            string archive=ArchiveBox.Text.Trim();
+            var storage=new LibraryStorage { Games=GamesBox.Text.Trim() };
+            var initial=_selectedShare;
+            var selection=await Task.Run(()=>initial != null && initial.Source.Equals(sourceFolder,StringComparison.OrdinalIgnoreCase)
+                    ? initial : ShareSelection.ForSource(archive,sourceFolder,storage),token);
+            if (revision != _previewRevision) return;
+            GameFolderBox.Text=selection.PlayableGame;
             var plans = await Task.Run(() => {
                 var list=new List<SharePlan>();
                 if(kind is 0 or 2) list.Add(ProjectBundle.Preview(sourceFolder, token));
-                if(kind is 1 or 2) { var game=ProjectBundle.Preview(gameFolder, token, "Game"); list.Add(kind==2 ? game with { Name=list[0].Name } : game); }
-                return list;
+                if(kind is 1 or 2) {
+                    if (!Directory.Exists(selection.PlayableGame)) throw new IOException("No playable build found for this game. Build it first, then select it again.");
+                    list.Add(ProjectBundle.Preview(selection.PlayableGame, token, "Game"));
+                }
+                return list.Select(p=>p with { Name=selection.Name }).ToList();
             }, token);
-            if(kind != ShareKind || sourceFolder != ShareFolderBox.Text.Trim() || gameFolder != GameFolderBox.Text.Trim()) return;
-            if (_shareName != null) plans=plans.Select(p=>p with { Name=_shareName }).ToList();
+            if(revision != _previewRevision || kind != ShareKind || sourceFolder != CurrentSource) return;
             _preview = plans;
             ShareFilesBox.Text = string.Join(Environment.NewLine, plans.SelectMany(plan => plan.Files.Select(f => plan.PackageKind + ": " + f.RelativePath)));
             ShareSummary.Text = $"{plans.Count} package(s), {plans.Sum(p=>p.Files.Count):N0} files, {plans.Sum(p=>p.TotalBytes)/1048576.0:N1} MB";
@@ -308,6 +354,7 @@ public partial class TorrentWindow : Window
         if (_closed) return;
         if (_closing) { await _shutdown.Task; return; }
         _closing = true; _timer.Stop(); _lifetime.Cancel();
+        _previewTimer.Stop();
         try
         {
             if (_operationTask != null) { try { await _operationTask; } catch { } }

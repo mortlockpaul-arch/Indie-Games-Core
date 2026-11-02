@@ -21,16 +21,22 @@ internal static class Program
             Directory.CreateDirectory(source); Directory.CreateDirectory(game);
             File.WriteAllText(Path.Combine(source,"Example.csproj"),"<Project><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>");
             foreach(string file in new[]{"Example.exe","Example.deps.json","Example.runtimeconfig.json"})File.WriteAllText(Path.Combine(game,file),"fixture");
+            string otherSource=Path.Combine(root,"Other"); Directory.CreateDirectory(otherSource);
+            string otherProject=Path.Combine(otherSource,"Other.csproj"); File.WriteAllText(otherProject,"<Project><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>");
+            string otherGame=new LibraryStorage { Games=Path.Combine(root,"games") }.GameFolder(otherProject); Directory.CreateDirectory(otherGame);
+            foreach(string file in new[]{"Other.exe","Other.deps.json","Other.runtimeconfig.json"})File.WriteAllText(Path.Combine(otherGame,file),"fixture");
             var catalogue=new TorrentWindow(root,source,Path.Combine(root,"cache"),Path.Combine(root,"games"),game);
             catalogue.Show();
             foreach(int kind in new[]{0,1,2})
             {
-                Exception? failure=null; bool inspected=false; DateTime deadline=DateTime.UtcNow.AddSeconds(20);
+                Console.WriteLine($"Checking automatic share preview for package type {kind}");
+                Exception? failure=null; bool inspected=false; int phase=0; DateTime deadline=DateTime.UtcNow.AddSeconds(20);
                 var timer=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(50) };
                 timer.Tick+=(_,_)=>
                 {
                     var share=app.Windows.OfType<ProjectShareWindow>().SingleOrDefault();
                     if (share == null) return;
+                    if (failure != null) { share.Close(); if(!share.IsVisible)timer.Stop(); return; }
                     if (!((Button)catalogue.FindName("CreateShareButton")).IsEnabled && DateTime.UtcNow<deadline) return;
                     try
                     {
@@ -38,12 +44,21 @@ internal static class Program
                         if (!((Button)catalogue.FindName("CreateShareButton")).IsEnabled) throw new Exception("Automatic share preview did not finish: "+((TextBlock)catalogue.FindName("ShareSummary")).Text);
                         var sourceRow=(FrameworkElement)catalogue.FindName("SourceShareRow");
                         var gameRow=(FrameworkElement)catalogue.FindName("GameShareRow");
-                        if ((sourceRow.Visibility==Visibility.Visible)!=(kind!=1) || (gameRow.Visibility==Visibility.Visible)!=(kind!=0)) throw new Exception("Share kind shows incorrect folder fields");
+                        if (sourceRow.Visibility!=Visibility.Visible || (gameRow.Visibility==Visibility.Visible)!=(kind!=0)) throw new Exception("Share kind shows incorrect folder fields");
                         if (!((TextBlock)catalogue.FindName("ShareSummary")).Text.StartsWith(kind==2 ? "2 package(s)" : "1 package(s)"))throw new Exception("Wrong preview package count");
+                        var sources=(ComboBox)catalogue.FindName("ShareFolderBox");
+                        var output=(TextBox)catalogue.FindName("GameFolderBox");
+                        if (!output.IsReadOnly || sources.Items.Count!=2)throw new Exception("Source dropdown or automatic output is incorrect");
+                        if (phase==0) { phase=1; sources.SelectedValue=otherSource; return; }
+                        if (phase==1) {
+                            if(output.Text!=otherGame || !((TextBox)catalogue.FindName("ShareFilesBox")).Text.Contains("Other"))throw new Exception("Dropdown selection did not refresh output and preview");
+                            phase=2; sources.SelectedValue=source; sources.SelectedValue=otherSource; sources.SelectedValue=source; return;
+                        }
+                        if(output.Text!=game || ((TextBox)catalogue.FindName("ShareFilesBox")).Text.Contains("Other"))throw new Exception("Rapid selection changes left a stale preview");
                         inspected=true;
                     }
-                    catch(Exception e){failure=e;}
-                    timer.Stop(); share.Close();
+                    catch(Exception e){failure=e; Console.Error.WriteLine(e.Message);}
+                    if(inspected)timer.Stop(); share.Close();
                 };
                 timer.Start(); catalogue.OpenShare(kind,new(source,game,"Example")); timer.Stop();
                 if(failure!=null)throw failure;
@@ -53,7 +68,7 @@ internal static class Program
             catalogue.Close();
             if(catalogue.IsVisible)throw new Exception("Closing torrent manager should hide it");
             catalogue.ShutdownAsync().GetAwaiter().GetResult();
-            Console.WriteLine("PASS WPF source/game/both windows, automatic preview, folder visibility, editor reuse and hide/shutdown");
+            Console.WriteLine("PASS WPF source dropdown, automatic output/preview, rapid selection changes, all package types and editor reuse");
 
             var main=new MainWindow();
             ((TextBox)main.FindName("RootBox")).Text=root;

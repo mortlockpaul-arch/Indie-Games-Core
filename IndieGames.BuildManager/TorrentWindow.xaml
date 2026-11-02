@@ -18,7 +18,15 @@
    <DockPanel><Button DockPanel.Dock="Right" Content="Load" Click="LoadCatalogue_Click"/><Button DockPanel.Dock="Right" Content="Open File…" Click="OpenCatalogue_Click"/><TextBox x:Name="CatalogueLocationBox" ToolTip="Catalogue JSON file or HTTP/HTTPS URL"/></DockPanel>
    <WrapPanel><Button Content="My Catalogue" Click="MyCatalogue_Click"/><Button Content="Export Catalogue…" Click="ExportCatalogue_Click"/><Button Content="Create Project Share…" Click="ShowShare_Click"/></WrapPanel>
   </StackPanel>
-  <StackPanel Grid.Row="1"><DockPanel><TextBlock DockPanel.Dock="Left" Text="Source archive"/><Button DockPanel.Dock="Right" Content="Browse…" Click="BrowseArchive_Click"/><TextBox x:Name="ArchiveBox"/></DockPanel><DockPanel><TextBlock Text="Playable games"/><TextBox x:Name="GamesBox"/></DockPanel></StackPanel>
+  <Grid Grid.Row="1">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <TextBlock Text="Source Archive"/>
+   <TextBox x:Name="ArchiveBox" Grid.Column="1" IsReadOnly="True" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+   <Button Grid.Column="2" Content="Browse…" Click="BrowseArchive_Click" ToolTip="Choose the source archive folder"/>
+   <TextBlock Grid.Column="3" Text="Playable Games" Margin="12,4,4,4"/>
+   <TextBox x:Name="GamesBox" Grid.Column="4" IsReadOnly="True" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+   <Button Grid.Column="5" Content="Browse…" Click="BrowseGames_Click" ToolTip="Choose the playable games folder"/>
+  </Grid>
   <DataGrid Grid.Row="2" x:Name="CatalogueGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended"
    Background="#1F2937" Foreground="#111827" RowBackground="#E5E7EB" AlternatingRowBackground="#D1D5DB" Margin="4">
    <DataGrid.Columns>
@@ -38,9 +46,9 @@
   <ContentControl Grid.Row="4" x:Name="ShareHost" Visibility="Collapsed">
    <StackPanel>
     <WrapPanel Margin="4,8"><RadioButton x:Name="SourceKindChoice" GroupName="ShareKind" Content="Source" IsChecked="True" Checked="ShareKind_Changed" Foreground="White" Margin="8"/><RadioButton x:Name="GameKindChoice" GroupName="ShareKind" Content="Playable Game" Checked="ShareKind_Changed" Foreground="White" Margin="8"/><RadioButton x:Name="BothKindChoice" GroupName="ShareKind" Content="Both" Checked="ShareKind_Changed" Foreground="White" Margin="8"/></WrapPanel>
-    <DockPanel x:Name="SourceShareRow"><TextBlock Text="Source Folder"/><Button DockPanel.Dock="Right" Content="Choose Folder…" Click="BrowseShare_Click"/><TextBox x:Name="ShareFolderBox" TextChanged="ShareFolder_Changed"/></DockPanel>
-    <DockPanel x:Name="GameShareRow" Visibility="Collapsed"><TextBlock Text="Playable Game Folder"/><Button DockPanel.Dock="Right" Content="Choose Game…" Click="BrowseGame_Click"/><TextBox x:Name="GameFolderBox" TextChanged="ShareFolder_Changed"/></DockPanel>
-    <Button Content="Refresh File Preview" Click="PreviewShare_Click" HorizontalAlignment="Left"/>
+    <DockPanel x:Name="SourceShareRow"><TextBlock Text="Source Folder"/><ComboBox x:Name="ShareFolderBox" DisplayMemberPath="Name" SelectedValuePath="Folder" SelectionChanged="ShareFolder_Changed" IsTextSearchEnabled="True" Margin="4" Padding="6" MinWidth="250" ToolTip="Select a game from the source archive"/></DockPanel>
+    <DockPanel x:Name="GameShareRow" Visibility="Collapsed"><TextBlock Text="Playable Game Folder (Automatic)"/><TextBox x:Name="GameFolderBox" IsReadOnly="True" ToolTip="Detected from the selected game's build output"/></DockPanel>
+    <TextBlock Text="File preview updates automatically when you select a game or change the package type." Foreground="#93C5FD" TextWrapping="Wrap"/>
     <TextBlock Text="Excludes bin, obj, repository metadata, backups, logs, conversion outputs and extracted 584E package folders. Review the file list before creating a share." TextWrapping="Wrap" Foreground="#9CA3AF"/>
     <TextBox x:Name="ShareFilesBox" Height="100" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="11"/>
     <Expander Header="Optional Trackers" Foreground="White" Margin="4"><TextBox x:Name="TrackersBox" Height="60" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" ToolTip="One tracker URL per line. Leave blank to use peer discovery."/></Expander>
