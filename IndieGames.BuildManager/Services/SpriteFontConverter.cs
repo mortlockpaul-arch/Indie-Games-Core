@@ -68,22 +68,40 @@ public static class SpriteFontConverter
                     reader.Read7BitEncodedInt(); // shared resource count
                     int primary = reader.Read7BitEncodedInt();
                     if (primary < 1 || primary > count || readers[primary - 1].Split(',')[0].Trim() != "Microsoft.Xna.Framework.Content." + readerName) continue;
+                    string backup = source + $".before-{kind}-conversion.bak";
+                    string decodeSource = source;
+                    if (header[3] == 'w' && header[4] == 5 && File.Exists(backup))
+                    {
+                        byte[] originalHeader = new byte[6];
+                        using (var original = File.OpenRead(backup)) original.ReadExactly(originalHeader);
+                        if (originalHeader[0] == 'X' && originalHeader[1] == 'N' && originalHeader[2] == 'B' && originalHeader[3] == 'x')
+                        {
+                            decodeSource = backup;
+                            header = originalHeader;
+                        }
+                    }
                     if (header[3] == 'w' && header[4] == 5)
                     {
                         results.Add(new(relative, "Skipped", "Already Windows XNB version 5"));
                         log($"SKIP {kind}: {relative} (already Windows version 5)");
                         continue;
                     }
-                    object loaded = load.Invoke(null, [source])!;
+                    object loaded = load.Invoke(null, [decodeSource])!;
                     object asset = Member(loaded, "Asset");
+                    if (header[3] == 'x') NormalizeXboxTexture(textures ? asset : Member(asset, "Texture"), header[4]);
                     byte[] converted = textures ? WriteTexture(asset) : WriteFont(asset);
+                    if (File.ReadAllBytes(source).AsSpan().SequenceEqual(converted))
+                    {
+                        results.Add(new(relative, "Skipped", "Conversion already up to date"));
+                        log($"SKIP {kind}: {relative} (conversion already up to date)");
+                        continue;
+                    }
                     string output = Path.Combine(staging, relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                     File.WriteAllBytes(output, converted);
                     token.ThrowIfCancellationRequested();
                     if (install)
                     {
-                        string backup = source + $".before-{kind}-conversion.bak";
                         if (!File.Exists(backup)) File.Copy(source, backup);
                         // Copy beside the destination first, so a failed conversion never truncates it.
                         string temporary = source + $".{kind}-conversion-" + Guid.NewGuid().ToString("N");
@@ -116,6 +134,52 @@ public static class SpriteFontConverter
         throw new InvalidDataException($"Missing extractor member: {value.GetType().Name}.{name}");
 
     private static object[] Items(object value, string name) => ((IEnumerable)Member(value, name)).Cast<object>().ToArray();
+
+    // Match FNA's Texture2DReader/X360TexUtil. XNB image payloads are linear;
+    // Xbox byte order still applies even though scalar XNB fields are LE.
+    private static void NormalizeXboxTexture(object texture, byte version)
+    {
+        int raw = (int)Member(texture, "RawFormat");
+        bool legacyBgra = version < 5 && raw == 1;
+        int format = version < 5 ? raw switch
+        {
+            1 => 0, 28 => 4, 30 => 5, 32 => 6,
+            _ => throw new NotSupportedException($"Unsupported legacy Xbox texture format {raw}.")
+        } : raw;
+        var property = texture.GetType().GetProperty("WindowsFormat")!;
+        Type enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        property.SetValue(texture, Enum.ToObject(enumType, format));
+        int width = (int)Member(texture, "Width"), height = (int)Member(texture, "Height");
+        var mips = Items(texture, "MipData");
+        for (int level = 0; level < mips.Length; level++)
+        {
+            byte[] data = (byte[])mips[level];
+            int w = Math.Max(1, width >> level), h = Math.Max(1, height >> level);
+            long expected = format switch
+            {
+                0 => (long)w * h * 4,
+                4 => (long)((w + 3) / 4) * ((h + 3) / 4) * 8,
+                5 or 6 => (long)((w + 3) / 4) * ((h + 3) / 4) * 16,
+                _ => data.Length
+            };
+            if (data.Length != expected) throw new InvalidDataException($"Unexpected Xbox mip length: expected {expected}, got {data.Length}.");
+            if (format == 0)
+            {
+                for (int i = 0; i < data.Length; i += 4)
+                {
+                    byte a = data[i], b = data[i + 1], c = data[i + 2], d = data[i + 3];
+                    // Legacy ARGB -> RGBA; XNA4 ABGR -> RGBA.
+                    data[i] = legacyBgra ? b : d; data[i + 1] = c;
+                    data[i + 2] = legacyBgra ? d : b; data[i + 3] = a;
+                }
+            }
+            else if (format is 4 or 5 or 6)
+            {
+                // DXT colour endpoints, indices and alpha are stored in BE words.
+                for (int i = 0; i < data.Length; i += 2) (data[i], data[i + 1]) = (data[i + 1], data[i]);
+            }
+        }
+    }
 
     private static void WriteTexturePayload(BinaryWriter writer, object texture)
     {

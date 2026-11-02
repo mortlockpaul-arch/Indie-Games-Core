@@ -1,0 +1,14 @@
+﻿<Project>
+ <PropertyGroup>
+  <_BuildManagerProjectKey>$(MSBuildProjectName)-$([MSBuild]::StableStringHash('$(MSBuildProjectFullPath)'))</_BuildManagerProjectKey>
+  <BaseOutputPath>$(BuildManagerCache)\bin\$(_BuildManagerProjectKey)\</BaseOutputPath>
+  <OutputPath>$(BaseOutputPath)$(Configuration)\$(Platform)\$(TargetFramework)\$(RuntimeIdentifier)\</OutputPath>
+  <OutputPath Condition="'$(MSBuildProjectFullPath)' == '$(BuildManagerMainProject)' and '$(OutputType)' != 'Library'">$(BuildManagerGameOutput)\</OutputPath>
+  <OutDir>$(OutputPath)</OutDir>
+  <BaseIntermediateOutputPath>$(BuildManagerCache)\obj\$(_BuildManagerProjectKey)\</BaseIntermediateOutputPath>
+  <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)\$(Platform)\$(TargetFramework)\$(RuntimeIdentifier)\</IntermediateOutputPath>
+ </PropertyGroup>
+ <Target Name="BuildManagerOutputNote" AfterTargets="Build" Condition="'$(MSBuildProjectFullPath)' == '$(BuildManagerMainProject)' and '$(OutputType)' != 'Library' and '$(IsCrossTargetingBuild)' != 'true'">
+  <Message Importance="high" Text="Playable game: $(TargetDir)" />
+ </Target>
+</Project>

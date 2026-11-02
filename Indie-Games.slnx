@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+
 <Solution>
   <Configurations>
     <Configuration Name="Debug" />
@@ -77,6 +77,22 @@
       <Platform Solution="*|x86" Project="x86" />
     </Project>
     <Project Path="D:/indie-game-archive/Appease the Spider (World) (XBLIG)/Appease the Spider (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/Head Shot 2 (World) (XBLIG)/Head Shot 2 (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/Head Shot God (World) (XBLIG)/Head Shot God (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/Try Not to Fart (World) (XBLIG)/Try Not to Fart (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/Arcadecraft (XBLIG)/Arcadecraft (XBLIG).csproj">
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>

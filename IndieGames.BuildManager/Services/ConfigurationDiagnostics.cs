@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -14,7 +14,7 @@ public static class ConfigurationDiagnostics
     public static async Task<ConfigurationReport> InspectAsync(
         GameProject project, string configuration, string platform, string target,
         string frameworkOverride, string runtimeOverride, string msbuildExecutable,
-        Action<string> log, CancellationToken token)
+        Action<string> log, CancellationToken token, IEnumerable<string>? buildArguments = null)
     {
         var issues = new List<ConfigurationIssue>();
         void Add(string severity, string code, string detail, string fix) =>
@@ -24,6 +24,7 @@ public static class ConfigurationDiagnostics
         if (msbuildExecutable.Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             args.Add("msbuild");
         args.Add(project.Path);
+        if (buildArguments != null) args.AddRange(buildArguments);
         args.Add($"-p:Configuration={configuration}");
         args.Add($"-p:Platform={platform}");
         if (!string.IsNullOrWhiteSpace(frameworkOverride))

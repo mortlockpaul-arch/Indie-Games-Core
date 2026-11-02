@@ -1,4 +1,4 @@
-using IndieGames.BuildManager.Models;
+﻿using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
@@ -17,16 +17,19 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<GameProject> _projects = [];
     private CancellationTokenSource? _cts;
+    private TorrentWindow? _torrentWindow;
+    private readonly LibraryStorage _storage = LibraryStorage.Load();
+    private bool _torrentShutdown;
     private readonly HashSet<string> _checkedRepairProjects = new(StringComparer.OrdinalIgnoreCase);
     public MainWindow()
     {
         InitializeComponent();
+        Closing += MainWindow_Closing;
+        RootBox.Text = _storage.Archive;
         ProjectsGrid.ItemsSource = _projects;
         AudioFfmpegBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
         WaveBankDecoderBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "vgmstream", "vgmstream-cli.exe");
         Scan();
-        ScanXnaReferences(
-    @"D:\indie-game-archive\$1 Zombie Game, The (World) (XBLIG)\584E07D1");
     }
 
 public static void ScanXnaReferences(string folder)
@@ -117,6 +120,39 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         );
     }
 
+    private void Storage_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null || _torrentWindow != null) { Log("Finish builds and close torrent sharing before changing storage folders."); return; }
+        _storage.Archive = RootBox.Text.Trim();
+        var window = new StorageWindow(_storage) { Owner = this };
+        if (window.ShowDialog() == true) { RootBox.Text = _storage.Archive; Scan(); }
+    }
+
+    private void TorrentCatalogue_Click(object sender, RoutedEventArgs e)
+    {
+        if (_torrentWindow != null) { _torrentWindow.Activate(); return; }
+        string root = Path.GetFullPath(RootBox.Text.Trim());
+        string? folder = Selected().FirstOrDefault() is { } project ? Path.GetDirectoryName(Path.GetFullPath(project.Path)) : null;
+        string prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
+        if (folder != null && folder.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            folder = Path.Combine(root, Path.GetRelativePath(root, folder).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0]);
+        _storage.Archive = root;
+        _torrentWindow = new TorrentWindow(root, folder, _storage.TorrentCache, _storage.Games, Selected().FirstOrDefault() is { } chosen ? _storage.GameFolder(chosen.Path) : null) { Owner = this };
+        _torrentWindow.ProjectInstalled += archive => { RootBox.Text = archive; Scan(); };
+        _torrentWindow.Closed += (_, _) => _torrentWindow = null;
+        _torrentWindow.Show();
+    }
+
+    private async void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_torrentWindow == null) return;
+        e.Cancel = true;
+        if (_torrentShutdown) return;
+        _torrentShutdown = true;
+        await _torrentWindow.ShutdownAsync();
+        Close();
+    }
+
     private void RunGameButton_Click(object sender, RoutedEventArgs e)
     {
         var project = Selected().FirstOrDefault();
@@ -135,7 +171,8 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
             return;
         }
 
-        string binDirectory = Path.Combine(gameDirectory, "bin");
+        string binDirectory = _storage.GameFolder(project.Path);
+        if (!Directory.Exists(binDirectory)) binDirectory = Path.Combine(gameDirectory, "bin");
         if (!Directory.Exists(binDirectory))
         {
             MessageBox.Show($"No build output found in:\n{binDirectory}\nBuild the game first.",
@@ -245,8 +282,11 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         await ExecuteAsync(async token =>
         {
             Log($"Inspecting {project.Name}");
-            await ProcessRunner.RunAsync("dotnet", ["msbuild", project.Path,
-                "-getProperty:TargetFramework,TargetFrameworks,Configuration,Platform,PlatformTarget,Platforms,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,BaseIntermediateOutputPath,ProjectAssetsFile"],
+            var args = new List<string> { "msbuild", project.Path,
+                $"-p:Configuration={Value(ConfigBox)}", $"-p:Platform={Value(PlatformBox)}",
+                "-getProperty:TargetFramework,TargetFrameworks,Configuration,Platform,PlatformTarget,Platforms,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,BaseIntermediateOutputPath,ProjectAssetsFile" };
+            args.AddRange(_storage.BuildArguments(project.Path));
+            await ProcessRunner.RunAsync("dotnet", args,
                 Path.GetDirectoryName(project.Path)!, Log, token);
         });
     }
@@ -267,7 +307,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
                 try
                 {
                     var report = await ConfigurationDiagnostics.InspectAsync(project, config, platform,
-                        target, framework, runtime, exe, Log, token);
+                        target, framework, runtime, exe, Log, token, _storage.BuildArguments(project.Path));
                     foreach (var issue in report.Issues)
                         Log($"[{issue.Severity}] {issue.Code}: {issue.Detail}\\n  Suggested action: {issue.Recommendation}");
                     project.Status = report.Issues.Any(i => i.Severity == "Error") ? "Issues found" :
@@ -295,29 +335,28 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
                 if (vs && !File.Exists(exe)) throw new FileNotFoundException("Specify an existing MSBuild.exe path.", exe);
                 if (!vs) args.Add(action == "restore" ? "restore" : "build");
                 args.Add(project.Path);
+                _storage.Archive = Path.GetFullPath(RootBox.Text.Trim());
+                args.AddRange(_storage.BuildArguments(project.Path));
                 if (vs) args.Add(action switch { "rebuild" => "-t:Rebuild", "clean" => "-t:Clean", "restore" => "-t:Restore", _ => "-t:Build" });
                 else if (action == "rebuild") args.Add("-t:Rebuild");
                 else if (action == "clean") args.Add("-t:Clean");
-                if (action != "restore")
-                {
-                    args.Add($"-p:Configuration={Value(ConfigBox)}");
-                    args.Add($"-p:Platform={Value(PlatformBox)}");
-                    args.Add($"-p:PlatformTarget={Value(TargetBox)}");
-                    string networkBackend = Value(NetworkBackendBox);
+                args.Add($"-p:Configuration={Value(ConfigBox)}");
+                args.Add($"-p:Platform={Value(PlatformBox)}");
+                args.Add($"-p:PlatformTarget={Value(TargetBox)}");
+                string networkBackend = Value(NetworkBackendBox);
 
-                    args.Add($"-p:NetworkBackend={networkBackend}");
-                    if (!string.IsNullOrWhiteSpace(FrameworkBox.Text)) args.Add($"-p:TargetFramework={FrameworkBox.Text.Trim()}");
-                    if (!string.IsNullOrWhiteSpace(RuntimeBox.Text)) args.Add($"-p:RuntimeIdentifier={RuntimeBox.Text.Trim()}");
-                    if (!string.IsNullOrWhiteSpace(DefineConstantsBox.Text))
-                    {
-                        // MSBuild -p treats semicolons as property separators.
-                        // Escape them as %3B to preserve the full DefineConstants value.
-                        string symbols = DefineConstantsBox.Text.Trim().Replace(";", "%3B");
-                        args.Add($"-p:DefineConstants={symbols}");
-                        Log("Note: DefineConstants overrides the project's evaluated symbols for this build.");
-                    }
-                    if (!vs && NoRestoreBox.IsChecked == true) args.Add("--no-restore");
+                args.Add($"-p:NetworkBackend={networkBackend}");
+                if (!string.IsNullOrWhiteSpace(FrameworkBox.Text)) args.Add($"-p:TargetFramework={FrameworkBox.Text.Trim()}");
+                if (!string.IsNullOrWhiteSpace(RuntimeBox.Text)) args.Add($"-p:RuntimeIdentifier={RuntimeBox.Text.Trim()}");
+                if (!string.IsNullOrWhiteSpace(DefineConstantsBox.Text))
+                {
+                    // MSBuild -p treats semicolons as property separators.
+                    // Escape them as %3B to preserve the full DefineConstants value.
+                    string symbols = DefineConstantsBox.Text.Trim().Replace(";", "%3B");
+                    args.Add($"-p:DefineConstants={symbols}");
+                    Log("Note: DefineConstants overrides the project's evaluated symbols for this build.");
                 }
+                if (action != "restore" && !vs && NoRestoreBox.IsChecked == true) args.Add("--no-restore");
                 Log($"> {exe} {string.Join(" ", args)}");
                 try
                 {
@@ -637,7 +676,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
                     ? SpriteFontConverter.ConvertTextures(content, extractor, Log, token)
                     : SpriteFontConverter.ConvertFonts(content, extractor, Log, token), token);
                 Log($"{kind}: {results.Count(r => r.Status == "Converted")} converted, " +
-                    $"{results.Count(r => r.Status == "Skipped")} already Windows, {results.Count(r => r.Status == "Failed")} failed. " +
+                    $"{results.Count(r => r.Status == "Skipped")} up to date, {results.Count(r => r.Status == "Failed")} failed. " +
                     "Rebuild the game to copy updated content to bin.");
             }
         });
