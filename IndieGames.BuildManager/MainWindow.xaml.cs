@@ -17,6 +17,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<GameProject> _projects = [];
     private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _scanCts;
     private TorrentWindow? _torrentWindow;
     private readonly LibraryStorage _storage = LibraryStorage.Load();
     private bool _torrentShutdown;
@@ -24,12 +25,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title=AppVersion.WindowTitle(Title);
         Closing += MainWindow_Closing;
         RootBox.Text = _storage.Archive;
         ProjectsGrid.ItemsSource = _projects;
         AudioFfmpegBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
         WaveBankDecoderBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "vgmstream", "vgmstream-cli.exe");
-        Scan();
+        Loaded += (_,_) => Scan();
     }
 
 public static void ScanXnaReferences(string folder)
@@ -65,13 +67,35 @@ public static void ScanXnaReferences(string folder)
     }
 }
 private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(line + Environment.NewLine); LogBox.ScrollToEnd(); });
-    private void Scan()
+    private async void Scan()
     {
+        _scanCts?.Cancel();
+        using var scan=new CancellationTokenSource(); _scanCts=scan;
+        string root=RootBox.Text.Trim();
         _projects.Clear();
         _checkedRepairProjects.Clear();
-        try { foreach (var p in ProjectScanner.Scan(RootBox.Text)) _projects.Add(p); Log($"Found {_projects.Count} projects."); }
-        catch (Exception ex) { Log($"Scan failed: {ex.Message}"); }
+        FolderScanProgress.IsIndeterminate=true; FolderScanProgress.Value=0; CancelScanButton.IsEnabled=true;
+        FolderScanStatus.Text="Finding Folders…";
+        var progress=new Progress<ProjectScanProgress>(p=> {
+            if (_scanCts != scan || scan.IsCancellationRequested) return;
+            FolderScanProgress.IsIndeterminate=p.Discovering;
+            FolderScanProgress.Maximum=Math.Max(1,p.TotalFolders); FolderScanProgress.Value=p.FoldersScanned;
+            FolderScanStatus.Text=p.Discovering ? $"Finding Folders… {p.TotalFolders:N0} Found" : $"Scanning Folders: {p.FoldersScanned:N0} / {p.TotalFolders:N0} · {p.ProjectsFound:N0} Projects";
+            FolderScanStatus.ToolTip=p.Folder;
+        });
+        try
+        {
+            var projects=await Task.Run(()=>ProjectScanner.Scan(root,scan.Token,progress));
+            if (_scanCts != scan || scan.IsCancellationRequested) return;
+            foreach (var project in projects) _projects.Add(project);
+            FolderScanProgress.IsIndeterminate=false; FolderScanProgress.Value=FolderScanProgress.Maximum;
+            FolderScanStatus.Text=$"Scan Complete · {_projects.Count:N0} Projects"; Log($"Found {_projects.Count} projects.");
+        }
+        catch (OperationCanceledException) { if (_scanCts == scan) FolderScanStatus.Text="Scan Cancelled"; }
+        catch (Exception ex) { if (_scanCts == scan) { FolderScanStatus.Text="Scan Failed: "+ex.Message; Log(FolderScanStatus.Text); } }
+        finally { if (_scanCts == scan) { _scanCts=null; FolderScanProgress.IsIndeterminate=false; CancelScanButton.IsEnabled=false; } }
     }
+    private void CancelScan_Click(object sender, RoutedEventArgs e) => _scanCts?.Cancel();
     private void Scan_Click(object sender, RoutedEventArgs e) => Scan();
 
     private async void InstallGameLoggerButton_Click( object sender, RoutedEventArgs e)
@@ -120,6 +144,14 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         );
     }
 
+    private void ProjectCleanup_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null || _torrentWindow != null) { Log("Finish builds and close torrent sharing before cleaning archive projects."); return; }
+        var window = new ProjectCleanupWindow(RootBox.Text.Trim()) { Owner = this };
+        window.ShowDialog();
+        if (window.Changed) Scan();
+    }
+
     private void Storage_Click(object sender, RoutedEventArgs e)
     {
         if (_cts != null || _torrentWindow != null) { Log("Finish builds and close torrent sharing before changing storage folders."); return; }
@@ -130,7 +162,12 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
 
     private void TorrentCatalogue_Click(object sender, RoutedEventArgs e)
     {
-        if (_torrentWindow != null) { _torrentWindow.Activate(); return; }
+        OpenTorrentManager();
+    }
+
+    private TorrentWindow OpenTorrentManager()
+    {
+        if (_torrentWindow != null) { _torrentWindow.Show(); _torrentWindow.WindowState=WindowState.Normal; _torrentWindow.Activate(); return _torrentWindow; }
         string root = Path.GetFullPath(RootBox.Text.Trim());
         string? folder = Selected().FirstOrDefault() is { } project ? Path.GetDirectoryName(Path.GetFullPath(project.Path)) : null;
         string prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
@@ -139,12 +176,46 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         _storage.Archive = root;
         _torrentWindow = new TorrentWindow(root, folder, _storage.TorrentCache, _storage.Games, Selected().FirstOrDefault() is { } chosen ? _storage.GameFolder(chosen.Path) : null) { Owner = this };
         _torrentWindow.ProjectInstalled += archive => { RootBox.Text = archive; Scan(); };
-        _torrentWindow.Closed += (_, _) => _torrentWindow = null;
+        _torrentWindow.StatusChanged += UpdateTorrentStatus;
+        _torrentWindow.Closed += (_, _) => { _torrentWindow = null; StopTorrentsButton.IsEnabled=false; };
+        StopTorrentsButton.IsEnabled=true;
         _torrentWindow.Show();
+        return _torrentWindow;
+    }
+
+    private void UpdateTorrentStatus(TorrentStatusSnapshot snapshot)
+    {
+        TorrentSummary.Text=snapshot.Summary;
+        TorrentActivity.Text=snapshot.Activity;
+        TorrentActivity.ToolTip=snapshot.Activity;
+        TorrentTransfersGrid.ItemsSource=snapshot.Transfers;
+    }
+    private void ViewTorrents_Click(object sender, RoutedEventArgs e) => OutputTabs.SelectedIndex=1;
+    private async void StopTorrents_Click(object sender, RoutedEventArgs e)
+    {
+        if (_torrentWindow == null) return;
+        StopTorrentsButton.IsEnabled=false;
+        await _torrentWindow.ShutdownAsync();
+    }
+    private void ShareSource_Click(object sender, RoutedEventArgs e) => ShareSelected(0);
+    private void ShareGame_Click(object sender, RoutedEventArgs e) => ShareSelected(1);
+    private void ShareBoth_Click(object sender, RoutedEventArgs e) => ShareSelected(2);
+    private void ShareSelected(int kind)
+    {
+        try
+        {
+            var project=Selected().FirstOrDefault() ?? throw new InvalidOperationException("Select a game project to share first.");
+            if (_cts != null) throw new InvalidOperationException("Wait for the current build to finish before sharing a snapshot.");
+            var selection=ShareSelection.ForProject(RootBox.Text.Trim(),project.Path,_storage);
+            OutputTabs.SelectedIndex=1;
+            OpenTorrentManager().OpenShare(kind,selection);
+        }
+        catch (Exception error) { MessageBox.Show(this,error.Message,"Share Project",MessageBoxButton.OK,MessageBoxImage.Information); }
     }
 
     private async void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _scanCts?.Cancel();
         if (_torrentWindow == null) return;
         e.Cancel = true;
         if (_torrentShutdown) return;

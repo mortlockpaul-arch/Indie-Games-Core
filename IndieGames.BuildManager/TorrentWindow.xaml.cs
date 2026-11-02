@@ -1,4 +1,4 @@
-﻿using IndieGames.BuildManager.Services;
+using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -39,12 +39,23 @@ public partial class TorrentWindow : Window
     private Task? _operationTask;
     private List<SharePlan>? _preview;
     private bool _closing, _closed;
+    private ProjectShareWindow? _shareWindow;
+    private string _activity = "";
+    private string? _shareName;
+    private readonly List<TorrentProject> _createdShares=[];
+    private int ShareKind
+    {
+        get => GameKindChoice?.IsChecked == true ? 1 : BothKindChoice?.IsChecked == true ? 2 : 0;
+        set { SourceKindChoice.IsChecked=value == 0; GameKindChoice.IsChecked=value == 1; BothKindChoice.IsChecked=value == 2; }
+    }
+    public event Action<TorrentStatusSnapshot>? StatusChanged;
     private readonly TaskCompletionSource _shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public event Action<string>? ProjectInstalled;
 
     public TorrentWindow(string archiveRoot, string? selectedFolder = null, string? stateDirectory = null, string? gamesRoot = null, string? gameFolder = null)
     {
         InitializeComponent();
+        Title=AppVersion.WindowTitle(Title);
         ArchiveBox.Text = archiveRoot;
         GamesBox.Text = gamesRoot ?? LibraryStorage.Load().Games;
         GameFolderBox.Text = gameFolder ?? "";
@@ -56,16 +67,18 @@ public partial class TorrentWindow : Window
         _timer.Start();
     }
 
-    private void Log(string text) { StatusBox.AppendText(text + Environment.NewLine); StatusBox.ScrollToEnd(); }
+    private void Log(string text) { StatusBox.AppendText(text + Environment.NewLine); StatusBox.ScrollToEnd(); _shareWindow?.Log(text); _activity=text; PublishStatus(); }
+    private void PublishStatus() => StatusChanged?.Invoke(new(_service.Transfers.Select(TorrentStatus.Capture).ToArray(),_activity));
     private async Task RunAsync(Func<CancellationToken, Task> action)
     {
         if (_closing) return;
         if (_operation != null) { Log("Wait for the current operation or cancel it."); return; }
         _operation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _shareWindow?.SetBusy(true);
         try { _operationTask = action(_operation.Token); await _operationTask; }
         catch (OperationCanceledException) { Log("Operation cancelled. Partial downloads are kept for resume."); }
-        catch (Exception error) { Log(error.GetBaseException().Message); }
-        finally { _operation.Dispose(); _operation = null; _operationTask = null; RefreshTransfers(); }
+        catch (Exception error) { Log(error.GetBaseException().Message); if (_shareWindow != null && _preview == null) ShareSummary.Text="Choose A Folder And Refresh The Preview"; }
+        finally { _operation.Dispose(); _operation = null; _operationTask = null; _shareWindow?.SetBusy(false); RefreshTransfers(); }
     }
 
     private void ConfigureNetwork()
@@ -90,8 +103,9 @@ public partial class TorrentWindow : Window
         if (_service.NetworkStarted)
         {
             PortBox.IsEnabled = PortForwardingBox.IsEnabled = false;
-            NetworkNote.Text = "Network settings apply until this window closes. Internet seeding may require the selected port to be reachable.";
+            NetworkNote.Text = "Network settings apply until Stop Torrents. Internet seeding may require the selected port to be reachable.";
         }
+        PublishStatus();
     }
 
     private IReadOnlyList<Row> SelectedRows() => CatalogueGrid.SelectedItems.Cast<Row>().ToArray() is { Length: > 0 } rows ? rows : throw new InvalidOperationException("Select one or more packages first.");
@@ -125,6 +139,20 @@ public partial class TorrentWindow : Window
     }
     private async void MyCatalogue_Click(object sender, RoutedEventArgs e)
         => await RunAsync(token => LoadCatalogueAsync(_service.LocalCataloguePath, token));
+    private async void Remove_Click(object sender, RoutedEventArgs e)
+        => await RunAsync(async token =>
+        {
+            var rows = SelectedRows();
+            if (MessageBox.Show(this, $"Remove {rows.Count} selected package(s) from this list and My catalogue?\n\nTheir transfers will stop. Cached packages, source files and installed games will be kept. External catalogue files and URLs remain unchanged.",
+                "Remove selected packages", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            foreach (var row in rows)
+            {
+                await _service.RemoveAsync(row.Project, token);
+                _rows.Remove(row);
+                Log($"Removed: {row.Project.Name} ({row.Project.PackageKind}). Files kept.");
+            }
+        });
+
     private async void ExportCatalogue_Click(object sender, RoutedEventArgs e)
     {
         if (_rows.Count == 0) { Log("Load or create a catalogue first."); return; }
@@ -137,14 +165,50 @@ public partial class TorrentWindow : Window
         var dialog = new OpenFolderDialog { Title = "Choose archive download destination" };
         if (dialog.ShowDialog(this) == true) ArchiveBox.Text = dialog.FolderName;
     }
-    private void ShowShare_Click(object sender, RoutedEventArgs e) => SharePanel.IsExpanded = true;
+    public void OpenShare(int kind, ShareSelection selection)
+    {
+        if (_operation != null) { Log("Wait for the current operation or cancel it."); return; }
+        ShareKind=kind;
+        ShareFolderBox.Text=selection.Source; GameFolderBox.Text=selection.PlayableGame; _shareName=selection.Name;
+        ShowShare_Click(this,new RoutedEventArgs());
+    }
+    private void ShowShare_Click(object sender, RoutedEventArgs e)
+    {
+        if (_shareWindow != null) { _shareWindow.Activate(); return; }
+        if (_operation != null) { Log("Wait for the current operation or cancel it."); return; }
+        // Reuse the editor and its preview state; it no longer occupies catalogue layout space.
+        object form=ShareHost.Content;
+        ShareHost.Content=null;
+        _createdShares.Clear();
+        var window=new ProjectShareWindow(this,form,()=>_operation != null,()=>_operation?.Cancel(),()=>ExportCreatedShares());
+        _shareWindow=window;
+        window.Loaded += (_,_) => PreviewShare_Click(window,new RoutedEventArgs());
+        try { window.ShowDialog(); }
+        finally { window.DetachForm(); ShareHost.Content=form; _shareWindow=null; }
+    }
+    private async void ExportCreatedShares()
+    {
+        if (_createdShares.Count == 0) return;
+        var dialog=new SaveFileDialog { Filter="Share Catalogue (*.json)|*.json", FileName="indie-share.json" };
+        if (dialog.ShowDialog(_shareWindow ?? (Window)this) == true)
+            await RunAsync(async token=> { await new TorrentCatalogue { Projects=_createdShares.ToList() }.SaveAsync(dialog.FileName,token); Log("Share catalogue saved: "+dialog.FileName); });
+    }
     private void BrowseShare_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "Choose the game's source and Content folder" };
-        if (dialog.ShowDialog(this) == true) ShareFolderBox.Text = dialog.FolderName;
+        if (dialog.ShowDialog(_shareWindow ?? (Window)this) == true) { ShareFolderBox.Text = dialog.FolderName; _shareName=null; }
     }
-    private void ShareKind_Changed(object sender, SelectionChangedEventArgs e) { _preview=null; if (CreateShareButton != null) CreateShareButton.IsEnabled=false; }
-    private void BrowseGame_Click(object sender, RoutedEventArgs e) { var d=new OpenFolderDialog { Title="Choose playable Windows game output" }; if(d.ShowDialog(this)==true) GameFolderBox.Text=d.FolderName; }
+    private void ShareKind_Changed(object sender, RoutedEventArgs e)
+    {
+        _preview=null; if (CreateShareButton != null) CreateShareButton.IsEnabled=false;
+        if (SourceShareRow != null) SourceShareRow.Visibility=ShareKind == 1 ? Visibility.Collapsed : Visibility.Visible;
+        if (GameShareRow != null) GameShareRow.Visibility=ShareKind == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (_shareWindow != null && _operation == null) PreviewShare_Click(this,new RoutedEventArgs());
+    }
+
+
+
+    private void BrowseGame_Click(object sender, RoutedEventArgs e) { var d=new OpenFolderDialog { Title="Choose playable Windows game output" }; if(d.ShowDialog(_shareWindow ?? (Window)this)==true) GameFolderBox.Text=d.FolderName; }
     private void ShareFolder_Changed(object sender, TextChangedEventArgs e)
     {
         _preview = null;
@@ -154,7 +218,8 @@ public partial class TorrentWindow : Window
         => await RunAsync(async token =>
         {
             _preview=null; CreateShareButton.IsEnabled=false;
-            int kind = ShareKindBox.SelectedIndex;
+            ShareFilesBox.Clear(); ShareSummary.Text="Preparing File Preview…";
+            int kind = ShareKind;
             string sourceFolder = ShareFolderBox.Text.Trim(), gameFolder = GameFolderBox.Text.Trim();
             var plans = await Task.Run(() => {
                 var list=new List<SharePlan>();
@@ -162,7 +227,8 @@ public partial class TorrentWindow : Window
                 if(kind is 1 or 2) { var game=ProjectBundle.Preview(gameFolder, token, "Game"); list.Add(kind==2 ? game with { Name=list[0].Name } : game); }
                 return list;
             }, token);
-            if(kind != ShareKindBox.SelectedIndex || sourceFolder != ShareFolderBox.Text.Trim() || gameFolder != GameFolderBox.Text.Trim()) return;
+            if(kind != ShareKind || sourceFolder != ShareFolderBox.Text.Trim() || gameFolder != GameFolderBox.Text.Trim()) return;
+            if (_shareName != null) plans=plans.Select(p=>p with { Name=_shareName }).ToList();
             _preview = plans;
             ShareFilesBox.Text = string.Join(Environment.NewLine, plans.SelectMany(plan => plan.Files.Select(f => plan.PackageKind + ": " + f.RelativePath)));
             ShareSummary.Text = $"{plans.Count} package(s), {plans.Sum(p=>p.Files.Count):N0} files, {plans.Sum(p=>p.TotalBytes)/1048576.0:N1} MB";
@@ -179,10 +245,12 @@ public partial class TorrentWindow : Window
             {
             Log($"Packaging {plan.PackageKind}: {plan.Name}…");
             var entry = await _service.CreateShareAsync(plan, trackers, token);
+            _createdShares.Add(entry); _shareWindow?.EnableExport();
             _rows.Add(new Row(entry)); CatalogueGrid.SelectedItem = _rows.Last();
             await _service.StartAsync(entry, seed: true, token);
             }
             Log("Share created and seeding started. Export the catalogue for other users. A snapshot is shared; later source edits require a new share.");
+            _preview=null; CreateShareButton.IsEnabled=false; ShareSummary.Text="Share Created — Seeding";
         });
     private async void Download_Click(object sender, RoutedEventArgs e)
         => await RunAsync(async token => { ConfigureNetwork(); foreach(var row in SelectedRows()) { await _service.StartAsync(row.Project, seed: false, token); Log($"Download started: {row.Project.Name} ({row.Project.PackageKind}). Use Verify and install when complete."); } });
@@ -227,11 +295,12 @@ public partial class TorrentWindow : Window
         });
     private void Cancel_Click(object sender, RoutedEventArgs e) => _operation?.Cancel();
 
-    private async void Window_Closing(object? sender, CancelEventArgs e)
+    private void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (_closed) return;
         e.Cancel = true;
-        await ShutdownAsync();
+        Hide();
+        Log("Torrent Manager hidden. Transfers continue; use Stop Torrents in the main window to stop them.");
     }
 
     public async Task ShutdownAsync()
@@ -245,6 +314,6 @@ public partial class TorrentWindow : Window
             await _service.DisposeAsync();
         }
         catch (Exception error) { Log("Transfer shutdown: " + error.Message); }
-        finally { _lifetime.Dispose(); _closed = true; Close(); _shutdown.TrySetResult(); }
+        finally { _lifetime.Dispose(); _closed = true; StatusChanged?.Invoke(new([],"Torrents Stopped")); Close(); _shutdown.TrySetResult(); }
     }
 }

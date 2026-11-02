@@ -91,6 +91,24 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         return transfer;
     }
 
+    public async Task RemoveAsync(TorrentProject project, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var catalogue = File.Exists(LocalCataloguePath)
+            ? await TorrentCatalogue.LoadAsync(LocalCataloguePath, token) : null;
+        var transfer = Transfers.FirstOrDefault(t => t.Project.InfoHash.Equals(project.InfoHash, StringComparison.OrdinalIgnoreCase));
+        if (transfer != null)
+        {
+            await transfer.Manager.StopAsync();
+            await Engine.RemoveAsync(transfer.Manager);
+            Transfers.Remove(transfer);
+        }
+        // Remove only this torrent identity: different snapshots may have the same display name.
+        // Packages, resume data, source folders and installed games are deliberately retained.
+        if (catalogue != null && catalogue.Projects.RemoveAll(p => p.InfoHash.Equals(project.InfoHash, StringComparison.OrdinalIgnoreCase)) > 0)
+            await catalogue.SaveAsync(LocalCataloguePath, CancellationToken.None);
+    }
+
     public async Task<string> InstallAsync(ProjectTransfer transfer, string archiveRoot, CancellationToken token)
     {
         if (!transfer.Manager.Complete || !transfer.Manager.HashChecked) throw new InvalidOperationException("Wait for the torrent to finish and verify all pieces.");

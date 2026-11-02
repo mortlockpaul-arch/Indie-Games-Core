@@ -91,6 +91,51 @@ try{StorageCleanup.Delete(new CleanupFolder(project,game,0));throw new Exception
 try{new LibraryStorage {Archive=project,Games=Path.Combine(project,"games"),BuildCache=storage.BuildCache,TorrentCache=storage.TorrentCache}.Validate();throw new Exception("Nested storage roots accepted");}catch(IOException){}
 if(LibraryStorage.ProjectKey(Path.Combine(root,"one","Demo.csproj"))==LibraryStorage.ProjectKey(Path.Combine(root,"two","Demo.csproj")))throw new Exception("Project identities collide");
 Console.WriteLine("PASS cleanup boundaries, unrelated-file preservation, legacy bin/obj preview and unique project identities");
+var duplicate=await seed.CreateShareAsync(plan,[],token);
+if(duplicate.Name!=entry.Name || duplicate.InfoHash==entry.InfoHash)throw new Exception("Duplicate fixture must share a name but have a distinct torrent identity");
+string originalPackage=sharing.PackagePath;
+await seed.RemoveAsync(duplicate,token); // An entry that has never started must also be removable.
+var afterReadyRemoval=await TorrentCatalogue.LoadAsync(seed.LocalCataloguePath,token);
+if(afterReadyRemoval.Projects.Any(p=>p.InfoHash==duplicate.InfoHash) || !afterReadyRemoval.Projects.Any(p=>p.InfoHash==entry.InfoHash))throw new Exception("Removal selected the wrong same-name snapshot");
+await seed.RemoveAsync(entry,token);
+var afterActiveRemoval=await TorrentCatalogue.LoadAsync(seed.LocalCataloguePath,token);
+if(afterActiveRemoval.Projects.Count!=1 || afterActiveRemoval.Projects[0].InfoHash!=gameEntry.InfoHash || seed.Transfers.Any(t=>t.Project.InfoHash==entry.InfoHash))throw new Exception("Active transfer/catalogue entry survived removal or other package removed");
+if(!File.Exists(originalPackage) || !File.Exists(Path.Combine(installedGame,"Demo.exe")) || !File.Exists(Path.Combine(project,"Program.cs")))throw new Exception("Removal deleted package, installed game or source files");
+await seed.RemoveAsync(entry,token); // Repeat removal is harmless.
+await seed.StartAsync(entry,true,token); // Engine deregistration permits re-adding retained packages.
+Console.WriteLine("PASS ready/active removal, same-name snapshot identity, persistent catalogue update, retained files and re-adding transfers");
 Console.WriteLine("TEST ROOT "+root);
+
+string selectionRoot=Path.Combine(root,"selection-archive"), selectionGame=Path.Combine(selectionRoot,"Selected Game");
+Directory.CreateDirectory(selectionGame);
+string selectionProject=Path.Combine(selectionGame,"Selected Game.csproj");
+File.WriteAllText(selectionProject,"<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+var selectionStorage=new LibraryStorage { Games=Path.Combine(root,"selection-games") };
+var selected=ShareSelection.ForProject(selectionRoot,selectionProject,selectionStorage);
+if(selected.Source!=selectionGame || selected.Name!="Selected Game" || selected.PlayableGame!=selectionStorage.GameFolder(selectionProject))throw new Exception("Sharing defaults do not follow selected project");
+string fallback=Path.Combine(selectionGame,"bin","Release","net10.0-windows"); Directory.CreateDirectory(fallback);
+void Playable(string directory){Directory.CreateDirectory(directory);foreach(string name in new[]{"Selected.exe","Selected.deps.json","Selected.runtimeconfig.json"})File.WriteAllText(Path.Combine(directory,name),"fixture");}
+Playable(fallback);
+if(ShareSelection.ForProject(selectionRoot,selectionProject,selectionStorage).PlayableGame!=fallback)throw new Exception("Legacy playable output was not detected");
+Playable(selected.PlayableGame);
+if(ShareSelection.ForProject(selectionRoot,selectionProject,selectionStorage).PlayableGame!=selected.PlayableGame)throw new Exception("Configured output must take priority");
+try{ShareSelection.ForProject(selectionRoot,Path.Combine(root,"outside.csproj"),selectionStorage);throw new Exception("Outside project accepted");}catch(IOException){}
+Console.WriteLine("PASS source/game sharing defaults, legacy output discovery and preferred build output");
+
+Directory.CreateDirectory(Path.Combine(selectionGame,"obj"));File.WriteAllText(Path.Combine(selectionGame,"obj","Excluded.csproj"),"<Project/>");
+Directory.CreateDirectory(Path.Combine(selectionGame,"Nested"));File.WriteAllText(Path.Combine(selectionGame,"Nested","Broken.csproj"),"<Project>");
+var updates=new List<ProjectScanProgress>();
+var scanned=ProjectScanner.Scan(selectionRoot,progress:new InlineProgress<ProjectScanProgress>(updates.Add));
+if(scanned.Count!=1 || !updates.Any(p=>p.Discovering) || updates.Last().FoldersScanned!=updates.Last().TotalFolders || updates.Last().ProjectsFound!=1)throw new Exception("Folder scanning/progress totals are incorrect");
+using var cancelScan=new CancellationTokenSource();cancelScan.Cancel();
+try{ProjectScanner.Scan(selectionRoot,cancelScan.Token);throw new Exception("Scan cancellation ignored");}catch(OperationCanceledException){}
+Console.WriteLine("PASS scan discovery, determinate folder progress, excluded outputs, malformed project handling and cancellation");
+var live=TorrentStatus.Capture(seed.Transfers.First(t=>t.Project.InfoHash==gameEntry.InfoHash));
+if(live.Kind!="Playable Game" || live.Name!=gameEntry.Name)throw new Exception("Live transfer status identity is incorrect");
+var snapshot=new TorrentStatusSnapshot([new("One","Source","Seeding",100,2,0,2048),new("Two","Playable Game","Downloading",50,1,1024,0)],"Fixture");
+if(!snapshot.Summary.Contains("1 Seeding") || !snapshot.Summary.Contains("1 Downloading") || snapshot.Transfers.Sum(t=>t.UploadRate)!=2048)throw new Exception("Torrent summary aggregation failed");
+Console.WriteLine("PASS live transfer status, package labels and aggregate torrent summary");
+
+sealed class InlineProgress<T>(Action<T> report) : IProgress<T> { public void Report(T value)=>report(value); }
 
 

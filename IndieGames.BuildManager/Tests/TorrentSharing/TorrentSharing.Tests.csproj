@@ -4,6 +4,10 @@
   <PackageReference Include="MonoTorrent" Version="3.0.2" />
   <Compile Include="..\..\Services\LibraryStorage.cs" Link="LibraryStorage.cs"/>
   <Compile Include="..\..\Services\StorageCleanup.cs" Link="StorageCleanup.cs"/>
+  <Compile Include="..\..\Services\ShareSelection.cs" Link="ShareSelection.cs"/>
+  <Compile Include="..\..\Services\TorrentStatus.cs" Link="TorrentStatus.cs"/>
+  <Compile Include="..\..\Services\ProjectScanner.cs" Link="ProjectScanner.cs"/>
+  <Compile Include="..\..\Models\GameProject.cs" Link="GameProject.cs"/>
   <Compile Include="..\..\Services\TorrentCatalogue.cs" Link="TorrentCatalogue.cs" />
   <Compile Include="..\..\Services\ProjectBundle.cs" Link="ProjectBundle.cs" />
   <Compile Include="..\..\Services\ProjectTorrentService.cs" Link="ProjectTorrentService.cs" />

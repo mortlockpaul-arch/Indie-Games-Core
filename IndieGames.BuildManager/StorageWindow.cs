@@ -15,7 +15,7 @@ public sealed class StorageWindow : Window
     private LibraryStorage Draft() => new() { Archive = _paths[0].Text.Trim(), Games = _paths[1].Text.Trim(), BuildCache = _paths[2].Text.Trim(), TorrentCache = _paths[3].Text.Trim() };
     public StorageWindow(LibraryStorage storage)
     {
-        Title = "Storage folders and cleanup"; Width = 900; Height = 760; MinWidth = 700; MinHeight = 500; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Title = AppVersion.WindowTitle("Storage Folders And Cleanup"); Width = 900; Height = 760; MinWidth = 700; MinHeight = 500; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(16) }; Content = new ScrollViewer { Content=panel, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
         panel.Children.Add(new TextBlock { Text = "Source stays in the archive. Playable builds, intermediate files and torrent snapshots use separate folders.", TextWrapping = TextWrapping.Wrap });
         string[] labels = ["Source archive", "Playable Windows games", "Disposable build cache", "Torrent snapshots / downloads"];
