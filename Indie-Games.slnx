@@ -91,8 +91,25 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
+    <Project Path="D:/indie-game-archive/21 Ball Snooker LIVE (World) (XBLIG)/21 Ball Snooker LIVE (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/21 Ball Snooker Champion (World) (XBLIG)/21 Ball Snooker Champion (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+    <Project Path="D:/indie-game-archive/9 Ball Pool Champion (World) (XBLIG)/9 Ball Pool Champion (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
   </Folder>
-  <Folder Name="/Reference-Projects/" />
+  <Folder Name="/Reference-Projects/">
+    <Project Path="D:/indie-game-archive/21 Ball Snooker LIVE (World) (XBLIG)/21 Ball Snooker LIVE.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
+  </Folder>
   <Project Path="RetroShelf/RetroShelf.csproj">
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />

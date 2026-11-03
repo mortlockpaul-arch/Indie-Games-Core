@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><PlatformTarget>x64</PlatformTarget>
+    <RoundLineSourceRoot Condition="'$(RoundLineSourceRoot)' == ''">D:\indie-game-archive\21 Ball Snooker LIVE (World) (XBLIG)\Maximinus</RoundLineSourceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="FNA"><HintPath>../../../FNA/bin/Debug/net8.0/FNA.dll</HintPath></Reference>
+    <Compile Include="$(RoundLineSourceRoot)\RoundLineManager.cs" Link="RoundLineManager.cs" />
+    <Compile Include="$(RoundLineSourceRoot)\RoundLine.cs" Link="RoundLine.cs" />
+    <Compile Include="$(RoundLineSourceRoot)\RoundLineVertex.cs" Link="RoundLineVertex.cs" />
+    <None Include="../../../FNA.Contents/x64/*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

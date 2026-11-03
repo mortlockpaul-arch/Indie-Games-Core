@@ -62,17 +62,18 @@ function Write-PcmXnb([string]$Wave, [string]$Output, [int]$LoopStart, [int]$Loo
     } finally { $writer.Dispose(); $stream.Dispose() }
 }
 
-$files = @(foreach ($folder in @('Songs', 'Sounds')) {
-    $directory = Join-Path $ContentDirectory $folder
-    if (Test-Path -LiteralPath $directory) { Get-ChildItem -LiteralPath $directory -Filter '*.xnb' -File -Recurse }
-})
-# Root-level XNA audio assets are common too. Only select known audio reader
-# names from uncompressed headers; do not send unrelated textures/fonts here.
-$files += @(Get-ChildItem -LiteralPath $ContentDirectory -Filter '*.xnb' -File | Where-Object {
+# Identify audio by its XNB reader, independent of folder naming.
+$files = @(Get-ChildItem -LiteralPath $ContentDirectory -Filter '*.xnb' -File -Recurse | Where-Object {
     $bytes = [IO.File]::ReadAllBytes($_.FullName)
-    $bytes.Length -ge 10 -and ($bytes[5] -band 0xC0) -eq 0 -and
-        [Text.Encoding]::UTF8.GetString($bytes) -match 'Microsoft\.Xna\.Framework\.Content\.(Song|SoundEffect)Reader'
+    $bytes.Length -ge 10 -and [Text.Encoding]::ASCII.GetString($bytes, 0, 3) -eq 'XNB' -and
+        (($bytes[5] -band 0xC0) -eq 0 -and
+         [Text.Encoding]::UTF8.GetString($bytes, 10, [Math]::Min(4096, $bytes.Length - 10)) -match 'Microsoft\.Xna\.Framework\.Content\.(Song|SoundEffect)Reader' -or
+         $_.FullName.Substring($ContentDirectory.Length).TrimStart('\','/') -match '^(Songs|Sounds|Sound|Audio|Music)[\\/]')
 })
+if (-not $files.Count) {
+    Write-Warning 'No audio XNB assets found; nothing was converted.'
+    exit 2
+}
 foreach ($file in $files) {
     $relative = $file.FullName.Substring($ContentDirectory.Length).TrimStart('\','/')
     if (-not $PSCmdlet.ShouldProcess($file.FullName, $(if ($Install) { 'Convert audio and install with backups' } else { 'Convert audio to staging directory' }))) { continue }
@@ -153,3 +154,4 @@ if ($results.Count) {
 }
 if (@($results | Where-Object Status -eq 'Failed').Count) { exit 1 }
 Write-Host "Converted $($results.Count) audio assets. Rebuild the game to copy installed content to bin."
+

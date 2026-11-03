@@ -3,6 +3,8 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using IndieGames.BuildManager;
 using IndieGames.BuildManager.Services;
 
@@ -83,6 +85,35 @@ internal static class Program
             };
             scanTimer.Start(); Dispatcher.PushFrame(frame);
             if(scanFailure!=null)throw scanFailure;
+            var projectsGrid=(DataGrid)main.FindName("ProjectsGrid");
+            if(projectsGrid.Columns.Any(c=>c.Header?.ToString()=="Repair"))throw new Exception("Game repair checkbox column is still present");
+            if(projectsGrid.Items.Count<2)throw new Exception("Selection fixtures were not scanned");
+            projectsGrid.SelectedIndex=0;
+            var selected=(IndieGames.BuildManager.Models.GameProject)projectsGrid.SelectedItem;
+            if(((TextBox)main.FindName("SelectedGameFolderBox")).Text!=Path.GetDirectoryName(selected.Path))throw new Exception("Selected game folder is incorrect");
+            if(!((Button)main.FindName("OpenSelectedFolderButton")).IsEnabled)throw new Exception("Open folder is disabled for a selected row");
+            projectsGrid.SelectedItems.Add(projectsGrid.Items[1]);
+            if(((TextBlock)main.FindName("GameSelectionCount")).Text!="2 games selected")throw new Exception("Multiple row selection count is incorrect");
+            foreach(var size in new[]{new Size(1300,790),new Size(950,620)})
+            {
+                main.Width=size.Width; main.Height=size.Height; main.UpdateLayout();
+                var info=(TextBox)main.FindName("SelectedGameFolderBox");
+                if(info.TransformToAncestor(main).Transform(new Point()).Y < projectsGrid.TransformToAncestor(main).Transform(new Point(0,projectsGrid.ActualHeight)).Y)
+                    throw new Exception("Game info is not below the grid");
+                if(projectsGrid.ActualHeight<60)throw new Exception("Project grid has no usable height");
+            }
+            projectsGrid.UnselectAll();
+            if(((Button)main.FindName("OpenSelectedFolderButton")).IsEnabled || ((TextBlock)main.FindName("SelectedGameName")).Text!="No game selected")
+                throw new Exception("Game info was not cleared after deselection");
+            main.Width=1300; main.Height=790; projectsGrid.SelectedIndex=0; main.UpdateLayout();
+            string? screenshot=Environment.GetEnvironmentVariable("BUILDMANAGER_UI_SCREENSHOT");
+            if(!string.IsNullOrWhiteSpace(screenshot))
+            {
+                var bitmap=new RenderTargetBitmap((int)main.ActualWidth,(int)main.ActualHeight,96,96,PixelFormats.Pbgra32);
+                bitmap.Render(main); var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var imageStream=File.Create(screenshot); encoder.Save(imageStream);
+            }
+            Console.WriteLine("PASS row selection, game info, removal of repair checkboxes and layout at normal/minimum sizes");
             if(!main.Title.EndsWith(" Version "+AppVersion.Current))throw new Exception("Main window version is missing");
             var bar=(ProgressBar)main.FindName("FolderScanProgress");
             if(bar.IsIndeterminate || bar.Value!=bar.Maximum)throw new Exception("Completed scan progress bar is incorrect");

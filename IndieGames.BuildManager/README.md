@@ -106,3 +106,19 @@ In the torrent window choose **Source**, **Playable game**, or **Both** before *
 **Both** creates two independent catalogue entries labelled **Source** and **Game**. Ctrl/Shift-select either or both rows and choose **Download / resume**. When complete, **Verify and install** routes Source to the archive and Game to the games folder. Existing destinations are refused. Game packages do not require a `.csproj`. Select a Game entry and click **Run installed game**, or use **Open games folder**. Installing never automatically executes a game. Older catalogues without a package kind load as Source.
 
 Run `./Tests/TorrentSharing/BuildLayout.Integration.ps1` to check two identically named synthetic game projects sharing one dependency. It verifies central intermediate files, direct game outputs, Content/native post-build copies, executable launch, and absence of source `bin`/`obj`. Pass `-ArtifactRoot <new-folder>` to keep the fixtures in a chosen location.
+
+## Known shader repairs (1.0.4)
+
+Select game rows, open the XNB Effect Conversion section, and choose **Repair known shaders (selected games)**. This action is independent of the extractor-based conversion button and does not require XnbExtractor.
+
+Supported shader fingerprints are the Maximinus `RoundLine`, billiards `spotlight`, `Blur` (`GaussianBlur` technique), and standard 36-byte billboard `ParticleEffect` assets found in 21 Ball Snooker LIVE. RoundLine's FNA vertex/index buffer counts are repaired as part of the operation. Only recognized originals or previously managed shader assets are replaced. Existing custom HLSL is preserved and reported as a conflict; unrelated binaries with the same filename are reported as unsupported.
+
+The action installs editable `.fx` files, Windows XNB assets, `build/BuildKnownShaders.ps1`, a manifest, and an incremental `BuildKnownShaders` project target. It migrates the earlier RoundLine-only target. The Windows SDK's `fxc.exe` is detected automatically. Rebuild the game after repair to deploy its updated content. New edits to the managed HLSL rebuild on subsequent game builds.
+
+Before committing, shaders are compiled in staging. Changes are backed up under each game's `shader-repair-backups` folder, which is excluded from the game build; failed commits roll back completed writes. Repeat runs skip unchanged repairs, including when the compiler is unavailable.
+
+Tests:
+- `dotnet run --project Tests/KnownShaders/KnownShaders.Tests.csproj`: repair integration tests, backups, unknown/custom shader protection, idempotency, missing compiler, cancellation, rollback, and path validation. Requires the Windows SDK. Uses bundled original fixtures.
+- `dotnet run --project Tests/KnownShadersGpu/KnownShadersGpu.csproj -- <game-Content-folder> <preview.png>`: offscreen FNA/Vulkan tests for all four effects. Requires a built FNA.Core and matching native libraries; the default renderer source root is the local Snooker LIVE port and can be overridden with the `RoundLineSourceRoot` MSBuild property.
+
+Shader implementations are desktop reconstructions of the original contracts, not recovered Xbox HLSL. Full gameplay and other shader fingerprints are outside these component tests.

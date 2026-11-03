@@ -1,4 +1,4 @@
-﻿using IndieGames.BuildManager.Models;
+using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
@@ -21,10 +21,11 @@ public partial class MainWindow : Window
     private TorrentWindow? _torrentWindow;
     private readonly LibraryStorage _storage = LibraryStorage.Load();
     private bool _torrentShutdown;
-    private readonly HashSet<string> _checkedRepairProjects = new(StringComparer.OrdinalIgnoreCase);
+    private bool _architectureReady, _updatingArchitecture;
     public MainWindow()
     {
         InitializeComponent();
+        _architectureReady = true;
         Title=AppVersion.WindowTitle(Title);
         Closing += MainWindow_Closing;
         RootBox.Text = _storage.Archive;
@@ -73,7 +74,6 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         using var scan=new CancellationTokenSource(); _scanCts=scan;
         string root=RootBox.Text.Trim();
         _projects.Clear();
-        _checkedRepairProjects.Clear();
         FolderScanProgress.IsIndeterminate=true; FolderScanProgress.Value=0; CancelScanButton.IsEnabled=true;
         FolderScanStatus.Text="Finding Folders…";
         var progress=new Progress<ProjectScanProgress>(p=> {
@@ -336,6 +336,55 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
     }
     private static string Value(ComboBox box) => box.SelectedItem is ComboBoxItem item ? item.Content.ToString() ?? "" : box.Text.Trim();
     private List<GameProject> Selected() => ProjectsGrid.SelectedItems.Cast<GameProject>().ToList();
+    private void BuildArchitecture_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_architectureReady || _updatingArchitecture || sender is not ComboBox box) return;
+        string choice = e is SelectionChangedEventArgs && box.SelectedItem is ComboBoxItem item ? item.Content?.ToString() ?? "" : box.Text;
+        string architecture = choice.Trim().ToLowerInvariant() switch
+        {
+            "x86" => "x86", "x64" => "x64", "anycpu" => "AnyCPU", _ => ""
+        };
+        if (architecture.Length == 0) return;
+        _updatingArchitecture = true;
+        try
+        {
+            PlatformBox.Text = architecture;
+            TargetBox.Text = architecture;
+            UpdateBuildArchitectureRows();
+        }
+        finally { _updatingArchitecture = false; }
+    }
+
+    private void UpdateBuildArchitectureRows()
+    {
+        if (!_architectureReady || TargetBox == null) return;
+        var selected = Selected().ToHashSet();
+        string architecture = Value(TargetBox);
+        foreach (var project in _projects)
+            project.BuildArchitecture = selected.Contains(project) ? architecture : "";
+    }
+
+    private void SaveArchitecture_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null) { Log("Wait for the current operation to finish before saving project settings."); return; }
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select game rows before saving architecture."); return; }
+        string architecture = Value(TargetBox);
+        foreach (var project in selected)
+        {
+            try
+            {
+                var settings = ProjectArchitectureUpdater.Apply(project.Path, architecture);
+                project.PlatformTarget = settings.PlatformTarget;
+                project.Platforms = settings.Platforms;
+                project.RuntimeIdentifier = settings.RuntimeIdentifier;
+                project.Status = "Architecture saved; rebuild";
+                Log($"Saved {settings.PlatformTarget} architecture: {project.Path} (original project backed up).");
+            }
+            catch (Exception ex) { Log($"Could not save architecture for {project.Name}: {ex.Message}"); }
+        }
+        ProjectsGrid_SelectionChanged(ProjectsGrid, new SelectionChangedEventArgs(DataGrid.SelectionChangedEvent, Array.Empty<object>(), Array.Empty<object>()));
+    }
     private async Task ExecuteAsync(Func<CancellationToken, Task> job)
     {
         if (_cts != null) { Log("Another operation is already running."); return; }
@@ -462,47 +511,43 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         }
     }
 
-    private void RepairGameCheckBox_Loaded(object sender, RoutedEventArgs e)
+    private void ProjectsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is CheckBox { Tag: GameProject project } check)
-            check.IsChecked = _checkedRepairProjects.Contains(project.Path);
+        if (GameSelectionCount == null) return;
+        UpdateBuildArchitectureRows();
+        var selected = Selected();
+        var project = ProjectsGrid.SelectedItem as GameProject;
+        GameSelectionCount.Text = selected.Count == 0 ? "Select games to build or repair" :
+            $"{selected.Count} game{(selected.Count == 1 ? "" : "s")} selected";
+        OpenSelectedFolderButton.IsEnabled = project != null;
+        SelectedGameName.Text = project?.Name ?? "No game selected";
+        SelectedGameFolderBox.Text = project == null ? "Select a row to see its folder" :
+            Path.GetDirectoryName(Path.GetFullPath(project.Path))!;
+        SelectedGameFolderBox.ToolTip = SelectedGameFolderBox.Text;
+        SelectedGameDetails.Text = project == null ? "" :
+            $"{Path.GetFileName(project.Path)} · {Display(project.TargetFramework)} · {Display(project.PlatformTarget)}" +
+            (string.IsNullOrWhiteSpace(project.RuntimeIdentifier) ? "" : $" · {project.RuntimeIdentifier}") +
+            (selected.Count > 1 ? $" · +{selected.Count - 1} other selected" : "");
+        static string Display(string value) => string.IsNullOrWhiteSpace(value) ? "Project default" : value;
     }
 
-    private void RepairGameCheckBox_Changed(object sender, RoutedEventArgs e)
+    private void OpenSelectedFolder_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not CheckBox { Tag: GameProject project } check) return;
-        if (check.IsChecked == true) _checkedRepairProjects.Add(project.Path);
-        else _checkedRepairProjects.Remove(project.Path);
-        UpdateRepairSelectionCount();
-    }
-
-    private void SelectAllRepairGames_Click(object sender, RoutedEventArgs e) => SetRepairGamesChecked(true);
-    private void ClearRepairGames_Click(object sender, RoutedEventArgs e) => SetRepairGamesChecked(false);
-
-    private void SetRepairGamesChecked(bool value)
-    {
-        _checkedRepairProjects.Clear();
-        if (value)
-            foreach (var project in _projects) _checkedRepairProjects.Add(project.Path);
-        ProjectsGrid.Items.Refresh();
-        UpdateRepairSelectionCount();
-    }
-
-    private void UpdateRepairSelectionCount()
-    {
-        if (RepairSelectionCount != null)
-            RepairSelectionCount.Text = $"Games checked for repairs: {_checkedRepairProjects.Count} / {_projects.Count}";
+        if (ProjectsGrid.SelectedItem is not GameProject project) return;
+        string folder = Path.GetDirectoryName(Path.GetFullPath(project.Path))!;
+        if (!Directory.Exists(folder)) { Log($"Folder not found: {folder}"); return; }
+        try { Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
+        catch (Exception ex) { Log($"Could not open folder: {ex.Message}"); }
     }
 
     private async void BatchXnaFixes_Click(object sender, RoutedEventArgs e)
     {
         string archive = Path.GetFullPath(RootBox.Text.Trim());
         if (!Directory.Exists(archive)) { Log($"Archive not found: {archive}"); return; }
-        // Use ONLY the checkboxes in the main projects grid; group multiple projects
+        // Use the selected rows in the main grid; group multiple projects
         // belonging to the same game so the repair is applied once per game folder.
         string archivePrefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
-        var games = _projects
-            .Where(p => _checkedRepairProjects.Contains(p.Path))
+        var games = Selected()
             .Select(p => Path.GetFullPath(p.Path))
             .Where(path => path.StartsWith(archivePrefix, StringComparison.OrdinalIgnoreCase))
             .Select(path => {
@@ -515,43 +560,45 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
             .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (games.Count == 0) {
-            MessageBox.Show(this, "Tick one or more games in the main Projects list first.", "Batch repairs");
+            MessageBox.Show(this, "Select one or more game rows first.", "Batch repairs");
             return;
         }
         string script = @"C:\PycharmProjects\xenia-game-manager\src\scripts\XnaRepairFunctions.ps1";
 
         var dialog = new Window {
-            Title = "Batch XNA + SDK repairs", Width = 980, Height = 650,
+            Title = "Source and SDK repairs", Width = 820, Height = 600,
             MinWidth = 650, MinHeight = 450, Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17,24,39)),
             Foreground = Brushes.White
         };
         var layout = new DockPanel { Margin = new Thickness(14) };
+        dialog.Resources[typeof(Button)] = FindResource(typeof(Button));
         dialog.Content = layout;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); layout.Children.Add(top);
-        top.Children.Add(new TextBlock { Text = "Repairs for games checked in the main window", FontSize = 17, Margin = new Thickness(0,0,0,10) });
+        top.Children.Add(new TextBlock { Text = "Repair selected games", FontSize = 17, Margin = new Thickness(0,0,0,10) });
         top.Children.Add(new TextBlock {
-            Text = $"{games.Count} distinct game folder(s) selected. Game selection is controlled on the main screen.",
+            Text = $"{games.Count} distinct game folder(s) selected. Use Ctrl or Shift in the main grid to change the selection.",
             Margin = new Thickness(0,0,0,10), Foreground = Brushes.LightGray
         });
         var fixers = new[] {
-            "Repair-XnaStorageSelector", "Repair-XnaOpenContainer", "Repair-XnaStorageSave",
-            "Repair-XnaStorageLoad", "Repair-XnaFileStream", "Repair-XnaColors",
-            "Repair-XnaSignedInGamerAvatar", "Repair-XnaSpriteBatch"
+            ("Storage selector", "Repair-XnaStorageSelector"), ("Open storage", "Repair-XnaOpenContainer"),
+            ("Save games", "Repair-XnaStorageSave"), ("Load games", "Repair-XnaStorageLoad"),
+            ("File access", "Repair-XnaFileStream"), ("Colors", "Repair-XnaColors"),
+            ("Gamer avatars", "Repair-XnaSignedInGamerAvatar"), ("Sprite drawing", "Repair-XnaSpriteBatch")
         };
-        top.Children.Add(new TextBlock { Text = "Fixers (select only those you want):", Margin = new Thickness(0,8,0,4) });
+        top.Children.Add(new TextBlock { Text = "Source repairs", Margin = new Thickness(0,8,0,4) });
         var fixerPanel = new WrapPanel(); top.Children.Add(fixerPanel);
         var fixerChecks = fixers.Select(name => new CheckBox {
-            Content = name, IsChecked = name == "Repair-XnaColors",
+            Content = name.Item1, Tag = name.Item2, IsChecked = name.Item2 == "Repair-XnaColors",
             Margin = new Thickness(0,0,16,7), Foreground = Brushes.White
         }).ToList();
         foreach (var check in fixerChecks) fixerPanel.Children.Add(check);
         var sdkFixers = new[] {
-            ("NETSDK1005 (clean obj/bin + restore)", "Repair-NetSdk1005"),
-            ("Shared project assets (unique obj paths)", "Repair-SharedProjectAssets"),
-            ("SDK1047 (restore, build and verify assets)", "Repair-SDK1047"),
-            ("SDK1032 (architecture mappings)", "Repair-SDK1032"),
+            ("Missing framework assets (1005)", "Repair-NetSdk1005"),
+            ("Conflicting build folders", "Repair-SharedProjectAssets"),
+            ("Missing runtime assets (1047)", "Repair-SDK1047"),
+            ("Architecture settings (1032)", "Repair-SDK1032"),
             ("Disable auxiliary DLL projects", "Rename-DllProjects"),
             ("Restore disabled DLL projects", "Rename-DllProjects-Restore"),
             ("Format project XML (with backups)", "Format-XbligProjects")
@@ -569,15 +616,18 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
             IsChecked = false, Foreground = Brushes.White, Margin = new Thickness(0,3,12,3) };
         var sdkRids = new CheckBox { Content = "Set RuntimeIdentifiers on shared projects",
             IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0,3,12,3) };
-        top.Children.Add(sdkRestore); top.Children.Add(sdkClean); top.Children.Add(sdkRids);
+        var sdkOptions = new StackPanel();
+        sdkOptions.Children.Add(sdkRestore); sdkOptions.Children.Add(sdkClean); sdkOptions.Children.Add(sdkRids);
+        top.Children.Add(new Expander { Header = "Advanced SDK options", Content = sdkOptions,
+            Foreground = Brushes.White, Margin = new Thickness(0,6,0,6) });
         var preview = new CheckBox { Content = "Preview only (-WhatIf)", IsChecked = true,
             Foreground = Brushes.White, Margin = new Thickness(0,6,0,8) };
         top.Children.Add(preview);
         var bottom = new StackPanel(); DockPanel.SetDock(bottom, Dock.Bottom); layout.Children.Add(bottom);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         bottom.Children.Add(actions);
-        var cancel = new Button { Content = "Cancel", Padding = new Thickness(15,6,15,6), Margin = new Thickness(5) };
-        var run = new Button { Content = "Run selected repairs", Padding = new Thickness(15,6,15,6), Margin = new Thickness(5) };
+        var cancel = new Button { Content = "Cancel", Margin = new Thickness(5) };
+        var run = new Button { Content = "Run selected repairs", Margin = new Thickness(5) };
         actions.Children.Add(cancel); actions.Children.Add(run);
         var summary = new TextBlock {
             Text = "Selected games: " + string.Join(", ", games.Take(8).Select(g => g.Name)) +
@@ -598,7 +648,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         };
         if (dialog.ShowDialog() != true) return;
         var selectedGames = games;
-        var selectedFixers = fixerChecks.Where(c => c.IsChecked == true).Select(c => (string)c.Content).ToArray();
+        var selectedFixers = fixerChecks.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToArray();
         if (selectedFixers.Length > 0 && !File.Exists(script)) {
             var chooser = new OpenFileDialog { Title = "Choose XnaRepairFunctions.ps1",
                 Filter = "PowerShell (*.ps1)|*.ps1" };
@@ -788,6 +838,41 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         });
     }
 
+    private async void RepairKnownShaders_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var games = selected.GroupBy(p => {
+            string path = Path.GetFullPath(p.Path);
+            return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!;
+        }, StringComparer.OrdinalIgnoreCase).ToList();
+        await ExecuteAsync(async token =>
+        {
+            foreach (var game in games)
+            {
+                token.ThrowIfCancellationRequested();
+                string project = Path.Combine(game.Key, Path.GetFileName(game.Key) + ".csproj");
+                if (!File.Exists(project)) project = game.First().Path;
+                Log($"=== Known shader repairs: {Path.GetFileName(game.Key)} ===");
+                try
+                {
+                    var results = await Task.Run(() => KnownShaderRepair.RepairAsync(project, Log, token), token);
+                    Log($"Known shaders: {results.Count(r => r.Status == "Repaired")} repaired, " +
+                        $"{results.Count(r => r.Status == "UpToDate")} up to date, " +
+                        $"{results.Count(r => r.Status == "Unsupported")} unrecognized, " +
+                        $"{results.Count(r => r.Status == "Conflict")} custom-source conflicts. Rebuild the game to deploy updated shaders.");
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Log($"Shader repair failed: {ex.Message}"); }
+            }
+        });
+    }
+
+
     private async void ConvertXnbEffects_Click(object sender, RoutedEventArgs e)
     {
         var selected = Selected();
@@ -868,3 +953,4 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         });
     }
 }
+

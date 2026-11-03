@@ -7,6 +7,7 @@
   <Compile Include="..\..\Services\ShareSelection.cs" Link="ShareSelection.cs"/>
   <Compile Include="..\..\Services\TorrentStatus.cs" Link="TorrentStatus.cs"/>
   <Compile Include="..\..\Services\ProjectScanner.cs" Link="ProjectScanner.cs"/>
+  <Compile Include="..\..\Services\ProjectArchitectureUpdater.cs" Link="ProjectArchitectureUpdater.cs"/>
   <Compile Include="..\..\Models\GameProject.cs" Link="GameProject.cs"/>
   <Compile Include="..\..\Services\TorrentCatalogue.cs" Link="TorrentCatalogue.cs" />
   <Compile Include="..\..\Services\ProjectBundle.cs" Link="ProjectBundle.cs" />

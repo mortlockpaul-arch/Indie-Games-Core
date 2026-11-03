@@ -27,11 +27,12 @@ public static class ConfigurationDiagnostics
         if (buildArguments != null) args.AddRange(buildArguments);
         args.Add($"-p:Configuration={configuration}");
         args.Add($"-p:Platform={platform}");
+        if (!string.IsNullOrWhiteSpace(target)) args.Add($"-p:PlatformTarget={target}");
         if (!string.IsNullOrWhiteSpace(frameworkOverride))
             args.Add($"-p:TargetFramework={frameworkOverride}");
         if (!string.IsNullOrWhiteSpace(runtimeOverride))
             args.Add($"-p:RuntimeIdentifier={runtimeOverride}");
-        args.Add("-getProperty:Configuration,Platform,PlatformTarget,Platforms,Configurations,TargetFramework,TargetFrameworks,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,BaseIntermediateOutputPath,ProjectAssetsFile,IsCrossTargetingBuild");
+        args.Add("-getProperty:Configuration,Platform,PlatformTarget,Platforms,Configurations,TargetFramework,TargetFrameworks,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,TargetPath,BaseIntermediateOutputPath,ProjectAssetsFile,IsCrossTargetingBuild");
 
         var start = new ProcessStartInfo(msbuildExecutable) {
             WorkingDirectory = Path.GetDirectoryName(project.Path)!,
@@ -81,7 +82,7 @@ public static class ConfigurationDiagnostics
         if (!string.IsNullOrWhiteSpace(evaluatedTarget) && !string.IsNullOrWhiteSpace(target) &&
             !evaluatedTarget.Equals(target, StringComparison.OrdinalIgnoreCase))
             Add("Warning", "TARGET", $"Evaluated PlatformTarget '{evaluatedTarget}' differs from requested '{target}'.",
-                "Review conditional PropertyGroups; the build UI's target setting is not used for evaluation.");
+                "Review conditional PropertyGroups and the requested compiler architecture.");
         var tfm = P("TargetFramework");
         var tfms = P("TargetFrameworks");
         if (string.IsNullOrWhiteSpace(tfm) && !string.IsNullOrWhiteSpace(tfms))
@@ -126,6 +127,10 @@ public static class ConfigurationDiagnostics
                     "Clean and restore the project's NuGet assets.");
             }
         }
+        string targetPath = P("TargetPath");
+        if (!string.IsNullOrWhiteSpace(targetPath) && !Path.IsPathRooted(targetPath))
+            targetPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(project.Path)!, targetPath));
+        issues.AddRange(ArchitectureDiagnostics.Inspect(targetPath, evaluatedTarget, P("RuntimeIdentifier"), token));
         if (issues.Count == 0)
             Add("Info", "NO_ISSUES", "No issues found in the inspected properties and assets.",
                 "This is not a guarantee that compilation or solution configuration mappings are valid.");

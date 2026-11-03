@@ -36,7 +36,12 @@ public static class ProjectScanner
                 try
                 {
                     var doc=XDocument.Load(file);
-                    string Read(string name)=>string.Join("; ",doc.Descendants().Where(e=>e.Name.LocalName==name).Select(e=>e.Value.Trim()).Where(v=>v.Length>0).Distinct());
+                    string Read(string name) {
+                        var saved = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "PropertyGroup" &&
+                            (string?)e.Attribute("Label") == ProjectArchitectureUpdater.Label)?
+                            .Elements().FirstOrDefault(e => e.Name.LocalName == name);
+                        return saved?.Value.Trim() ?? string.Join("; ",doc.Descendants().Where(e=>e.Name.LocalName==name).Select(e=>e.Value.Trim()).Where(v=>v.Length>0).Distinct());
+                    }
                     result.Add(new GameProject {
                         Name=Path.GetFileNameWithoutExtension(file),Path=file,
                         TargetFramework=Read("TargetFrameworks") is { Length:>0 } multi ? multi : Read("TargetFramework"),
