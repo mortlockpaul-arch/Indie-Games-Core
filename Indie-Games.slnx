@@ -1,4 +1,4 @@
-
+<?xml version='1.0' encoding='utf-8'?>
 <Solution>
   <Configurations>
     <Configuration Name="Debug" />
@@ -13,12 +13,7 @@
     <Platform Name="x64" />
   </Platforms>
   <Folder Name="/indie-game-downloads/">
-    <Project Path="D:/indie-game-archive/Adamant Ants (World) (XBLIG)/Adamant Ants (World) (XBLIG).csproj">
-      <Platform Solution="*|Any CPU" Project="x64" />
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
-  </Folder>
+    </Folder>
   <Folder Name="/Library-Projects/">
     <Project Path="FNA.AvatarCompat/FNA.AvatarCompat.csproj" />
     <Project Path="FNA.Contents/FNA.Contents.csproj">
@@ -92,7 +87,7 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
-    <Project Path="D:/indie-game-archive/Arcadecraft (XBLIG)/Arcadecraft (XBLIG).csproj">
+    <Project Path="D:/indie-game-archive/Adamant Ants (World) (XBLIG)/Adamant Ants (World) (XBLIG).csproj">
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
