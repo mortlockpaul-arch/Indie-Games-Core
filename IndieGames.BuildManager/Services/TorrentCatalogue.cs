@@ -48,12 +48,19 @@ public sealed class TorrentCatalogue
             await using var stream = File.OpenRead(location);
             await CopyBoundedAsync(stream, memory, token);
         }
-        var catalogue = JsonSerializer.Deserialize<TorrentCatalogue>(memory.ToArray(), JsonOptions) ?? throw new InvalidDataException("Empty catalogue.");
+        return await ParseAsync(memory.ToArray(), token);
+    }
+
+    public static async Task<TorrentCatalogue> ParseAsync(byte[] bytes, CancellationToken token)
+    {
+        if (bytes.Length > MaximumCatalogueBytes) throw new InvalidDataException("Catalogue exceeds 8 MB.");
+        var catalogue = JsonSerializer.Deserialize<TorrentCatalogue>(bytes, JsonOptions) ?? throw new InvalidDataException("Empty catalogue.");
         if (catalogue.Version != 1 || catalogue.Projects == null || catalogue.Projects.Count > 1000)
             throw new InvalidDataException("Unsupported catalogue version or project count.");
         var hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var project in catalogue.Projects)
         {
+            token.ThrowIfCancellationRequested();
             await ValidateAsync(project);
             if (!hashes.Add(project.InfoHash)) throw new InvalidDataException("Duplicate torrent in catalogue.");
         }
@@ -73,7 +80,7 @@ public sealed class TorrentCatalogue
     public async Task SaveAsync(string path, CancellationToken token)
     {
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
-        if (json.Length > MaximumCatalogueBytes) throw new InvalidDataException("Catalogue exceeds 8 MB; export fewer projects.");
+        if (json.Length > MaximumCatalogueBytes) throw new InvalidDataException("Catalogue exceeds 8 MB.");
         string full = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         string temporary = full + ".tmp-" + Guid.NewGuid().ToString("N");

@@ -47,8 +47,12 @@ internal static class Program
             string otherProject=Path.Combine(otherSource,"Other.csproj"); File.WriteAllText(otherProject,"<Project><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>");
             string otherGame=new LibraryStorage { Games=Path.Combine(root,"games") }.GameFolder(otherProject); Directory.CreateDirectory(otherGame);
             foreach(string file in new[]{"Other.exe","Other.deps.json","Other.runtimeconfig.json"})File.WriteAllText(Path.Combine(otherGame,file),"fixture");
-            if(Environment.GetEnvironmentVariable("UI_MAIN_ONLY")!="1") { var catalogue=new TorrentWindow(root,source,Path.Combine(root,"cache"),Path.Combine(root,"games"),game);
+            if(Environment.GetEnvironmentVariable("UI_MAIN_ONLY")!="1") { var catalogue=new TorrentWindow(root,source,Path.Combine(root,"cache"),Path.Combine(root,"games"),game,
+                globalCatalogue:new GlobalCatalogue(Path.Combine(root,"cache"),_=>Task.FromResult(new TorrentCatalogue())));
             catalogue.Show();
+            if(catalogue.FindName("CatalogueLocationBox")!=null)throw new Exception("Manual catalogue loading is still exposed");
+            if(catalogue.FindName("GlobalCatalogueStatus") is not TextBlock)throw new Exception("Automatic catalogue status is missing");
+            if(((Button)catalogue.FindName("CreateShareButton")).Content.ToString()!="Publish for approval")throw new Exception("Publish approval action is missing");
             foreach(int kind in new[]{0,1,2})
             {
                 Console.WriteLine($"Checking automatic share preview for package type {kind}");
@@ -108,7 +112,7 @@ internal static class Program
             catalogue.ShutdownAsync().GetAwaiter().GetResult();
             Console.WriteLine("PASS WPF source dropdown, automatic output/preview, rapid selection changes, all package types and editor reuse");
 
-            } var main=new MainWindow();
+            } var main=new MainWindow { WindowState=WindowState.Normal };
             ((TextBox)main.FindName("RootBox")).Text=root;
             main.Show();
             var frame=new DispatcherFrame(); Exception? scanFailure=null; DateTime scanDeadline=DateTime.UtcNow.AddSeconds(20);

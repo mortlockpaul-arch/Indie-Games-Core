@@ -197,7 +197,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         log($"Seeding {started} completed local package(s).");return started;
     }
 
-    public async Task RemoveAsync(TorrentProject project, CancellationToken token)
+    public async Task RemoveAsync(TorrentProject project, CancellationToken token, bool keepLocalMetadata = false)
     {
         token.ThrowIfCancellationRequested();
         var catalogue = File.Exists(LocalCataloguePath)
@@ -211,7 +211,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         }
         // Remove only this torrent identity: different snapshots may have the same display name.
         // Packages, resume data, source folders and installed games are deliberately retained.
-        if (catalogue != null && catalogue.Projects.RemoveAll(p => p.InfoHash.Equals(project.InfoHash, StringComparison.OrdinalIgnoreCase)) > 0)
+        if (!keepLocalMetadata && catalogue != null && catalogue.Projects.RemoveAll(p => p.InfoHash.Equals(project.InfoHash, StringComparison.OrdinalIgnoreCase)) > 0)
             await catalogue.SaveAsync(LocalCataloguePath, CancellationToken.None);
     }
 

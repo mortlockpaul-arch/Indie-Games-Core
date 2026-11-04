@@ -169,7 +169,7 @@ public static void ScanXnaReferences(string folder)
 
     private TorrentWindow OpenTorrentManager()
     {
-        if (_torrentWindow != null) { _torrentWindow.Show(); _torrentWindow.WindowState=WindowState.Normal; _torrentWindow.Activate(); return _torrentWindow; }
+        if (_torrentWindow != null) { _torrentWindow.Show(); if(_torrentWindow.WindowState==WindowState.Minimized)_torrentWindow.WindowState=WindowState.Maximized; _torrentWindow.Activate(); return _torrentWindow; }
         string root = Path.GetFullPath(RootBox.Text.Trim());
         string? folder = Selected().FirstOrDefault() is { } project ? Path.GetDirectoryName(Path.GetFullPath(project.Path)) : null;
         string prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;

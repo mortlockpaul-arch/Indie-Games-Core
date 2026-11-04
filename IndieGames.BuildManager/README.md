@@ -1,4 +1,4 @@
-﻿# Indie Games Build Manager (WPF, .NET 10)
+# Indie Games Build Manager (WPF, .NET 10)
 
 A starter desktop application for discovering game projects and diagnosing configuration/platform mismatches.
 
@@ -54,35 +54,33 @@ The override does not edit project files; BuildManager passes matching build pro
 ## Startup Diagnostics Injection
 Select one or more projects, then click **Inject Startup Diagnostics**. Adds runtime, process architecture, OS, executable and working directory logging to a conventional `static void Main` or `static int Main`. Backs up the source file with `.startup-diagnostics.bak`, skips multiple/absent Main methods and repeat injections. Review generated changes; this is a conservative text-based injector, not a full C# syntax parser. Console output still requires a visible/attached console or debugger output capture.
 
-## Project torrent catalogue and sharing
+## Global project catalogue (1.1.0)
 
-Open **Project torrent catalogue / sharing…** from the main window. Select a game row first to prefill its archive folder for sharing.
+Build Manager automatically reads the approved catalogue from [Indie-Games-Catalogue](https://github.com/mortlockpaul-arch/Indie-Games-Catalogue). No catalogue file needs to be opened, saved or exported. The catalogue refreshes when opened, every five minutes while visible, and with **Refresh catalogue**. A fully verified copy is cached for offline browsing; a failed or malformed download does not replace it.
 
-### Share a project
+### Publish a project
 
-1. Expand **Create a share**, choose the game's folder, and click **Preview files**.
-2. Review the source/Content file list. Build outputs (`bin`/`obj`), version-control metadata, backups, logs, conversion staging and extracted `584E*` package folders are excluded; directory links are not followed.
-3. Optionally add tracker URLs. Click **Create torrent and seed** to create an immutable ZIP snapshot and begin seeding it.
-4. Click **Export catalogue…**. Share the JSON file with recipients or host it at an HTTP/HTTPS URL; recipients load it in the catalogue window. The file embeds torrent metadata, so no separate `.torrent` hosting is necessary.
-5. Keep the catalogue window open while seeding. Editing source after snapshot creation does not change the shared package; create a new share to publish another version.
+1. Choose **Connect GitHub** and complete the browser/terminal sign-in. The app installs GitHub CLI if needed; GitHub CLI manages the credential. Browsing and downloading need no account.
+2. Choose **Publish project**, select source files, a playable build, or both, and review the preview. Publish only material you have permission to share. Builds, backups, logs and version-control metadata are excluded from source packages; directory links are not followed.
+3. Choose **Publish for approval**. Build Manager packages and seeds the selected files, then submits metadata to a GitHub pull request in the dedicated catalogue repository. External contributors use their own fork; nobody receives a shared write token.
+4. The catalogue owner reviews and merges accepted requests. GitHub Actions validates and publishes approved entries; recipients then see them automatically. **My submissions** opens the contributor's requests; **Review submissions** opens the owner's review queue. There is no automatic merge.
+5. Keep Build Manager running to seed the package. Changing files creates a new snapshot; unchanged files reuse a valid existing package. Repeated submission reuses its request. A rejected request stays closed; modify the package to create a new snapshot.
+
+Existing local shares remain visible as **Local · not submitted** and can be migrated with **Publish selected**. Failed submissions retain packages and seeding state so they can be retried. **Awaiting approval** packages are local to the contributor, not part of the global catalogue. Accepted entries show **Approved** once the published catalogue contains them. The initial catalogue is empty until the owner accepts a submission.
 
 ### Download and install
 
-1. Open the shared catalogue file or paste its URL and click **Load**.
-2. Select a project and choose **Download / resume**. Progress, connected peers and transfer rates are displayed. Downloads also upload verified pieces while running.
-3. Choose **Verify and install** after completion. Torrent pieces and the ZIP's SHA-256 are checked before extraction; entry paths and declared sizes are validated. Existing project folders are never overwritten.
-4. The installed project appears in the main project list. Downloading does not run or build it. Source project references remain as published and may need the usual local FNA/core configuration before building.
+Select an approved package and choose **Download / Resume**, then **Verify And Install** once complete. Torrent pieces and ZIP SHA-256 are checked before extraction. Paths, sizes and contents are validated; existing destination folders are never overwritten. Source goes to the configured archive; playable builds go to the games folder. Installation never runs code automatically. **Run Installed Game** launches a selected playable package. Source may need the usual shared-framework configuration before building.
 
-**Pause** suspends a transfer; **Stop** stops it while preserving cached files for resume. **Cancel operation** cancels packaging/catalogue loading/installation; use Pause or Stop for transfers already running. Closing the catalogue or application stops the client and saves resume data. Reopen the catalogue and choose Download / resume or Seed selected to restart a transfer; transfers do not automatically restart on application launch.
+**Pause** and **Stop** preserve cached data for resume. Closing the catalogue hides it while transfers continue; **Stop Torrents** or exiting Build Manager stops the client. **Remove Selected** hides entries on this PC and stops their transfers while retaining files. It never removes global entries. **Show hidden packages** restores the local view. Retiring a public entry requires an owner-reviewed change in the catalogue repository.
 
-Snapshots, the local `my-catalogue.json`, downloads and resume data live in the configured torrent-cache folder (default `D:\indie-torrent-cache`). Existing `.torrent-sharing` caches are not moved automatically; choose that old folder in storage settings to keep using one. Keep the ZIP snapshots to continue seeding. Changing the install destination does not move this cache.
-
-Internet peers use DHT and optional trackers; a catalogue only lists projects and does not host their payloads. At least one reachable seeder is needed. The default listening port is TCP/UDP 6881; change it before the first transfer. Optional UPnP/NAT-PMP port forwarding is off by default; manual forwarding may be needed for internet seeding. The basic implementation does not include a hosted catalogue service, accounts, torrent signing, or automatic source updates. Obtain catalogues from sources you trust; hashes verify integrity, not the publisher's identity.
+Packages, legacy `my-catalogue.json` transfer metadata, publication status, verified global cache and resume data stay in the configured torrent cache. Local bookkeeping remains automatic. Changing storage folders does not move existing data. GitHub hosts metadata, not the ZIP payload: a reachable seeder is still needed. TCP/UDP port 6881 is the default; optional router forwarding is off by default. Approval is moderation, not a guarantee of compatibility or executable safety.
 
 ### Integration checks
 
-Run `dotnet run --project Tests/TorrentSharing/TorrentSharing.Tests.csproj` from this folder. The test creates synthetic source/content and transfers it between two loopback-only clients (DHT, trackers, local discovery and router port mapping disabled). It checks snapshot exclusions, catalogue round-trip, actual transfer, pause/resume, stopped-transfer resume, verified extraction, refusal to overwrite existing projects, checksum failures, ZIP traversal rejection and cancellation. It prints its temporary artifact directory; no archive game content is shared.
-
+- `dotnet run --project IndieGames.BuildManager/Tests/GlobalCatalogue/GlobalCatalogue.Tests.csproj -c Release`: verified online/offline cache, invalid-download preservation, cancellation, contributor fork/PR flow, owner review path, pending/approved separation, idempotent retry, partial failure recovery and authorization-header handling. Uses synthetic metadata and a fake GitHub API by default.
+- `dotnet run --project IndieGames.BuildManager/Tests/TorrentSharing/TorrentSharing.Tests.csproj -c Release`: real loopback transfers, pause/resume, package validation, extraction and cleanup boundaries. Never shares archive game content.
+- `dotnet run --project IndieGames.BuildManager/Tests/UiSmoke/UiSmoke.Tests.csproj -c Release`: automatic catalogue UI, publication action, share previews and window layout. Uses an injected local catalogue and no GitHub access.
 
 ## Storage folders and playable game sharing
 

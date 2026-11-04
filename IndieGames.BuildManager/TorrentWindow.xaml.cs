@@ -19,6 +19,8 @@ public partial class TorrentWindow : Window
         public ImageSource? Icon { get; private set; } = icon;
         public void SetIcon(ImageSource? value) { Icon=value; PropertyChanged?.Invoke(this,new PropertyChangedEventArgs(nameof(Icon))); }
         public string KindLabel => Project.PackageKind == "Game" ? "Playable game" : "Source files";
+        public string Publication { get; private set; } = "Local · not submitted";
+        public void SetPublication(string value) { Publication=value; PropertyChanged?.Invoke(this,new(nameof(Publication))); }
         public bool IsInSolution { get; private set; }
         public void SetMembership(bool value) { if(IsInSolution==value)return; IsInSolution=value; PropertyChanged?.Invoke(this,new(nameof(IsInSolution))); }
         public string Status { get; private set; } = "Not started";
@@ -39,6 +41,12 @@ public partial class TorrentWindow : Window
 
     private readonly ObservableCollection<Row> _rows = [];
     private readonly ProjectTorrentService _service;
+    private readonly GlobalCatalogue _globalCatalogue;
+    private readonly CatalogueLocalState _catalogueState;
+    private readonly HashSet<string> _approved = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DispatcherTimer _catalogueTimer = new() { Interval=TimeSpan.FromMinutes(5) };
+    private Task? _catalogueRefresh;
+    private bool _refreshingCatalogue;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _operation;
@@ -54,7 +62,6 @@ public partial class TorrentWindow : Window
     private int _previewRevision;
     private readonly DispatcherTimer _previewTimer=new() { Interval=TimeSpan.FromMilliseconds(250) };
     private string CurrentSource=>ShareFolderBox.SelectedValue as string ?? _selectedSourceFolder;
-    private readonly List<TorrentProject> _createdShares=[];
     private string? _previewIcon;
     private string? _membershipStamp;
     private bool _checkingMembership;
@@ -68,7 +75,7 @@ public partial class TorrentWindow : Window
     private readonly TaskCompletionSource _shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public event Action<string>? ProjectInstalled;
 
-    public TorrentWindow(string archiveRoot, string? selectedFolder = null, string? stateDirectory = null, string? gamesRoot = null, string? gameFolder = null, ProjectTorrentService? service = null)
+    public TorrentWindow(string archiveRoot, string? selectedFolder = null, string? stateDirectory = null, string? gamesRoot = null, string? gameFolder = null, ProjectTorrentService? service = null, GlobalCatalogue? globalCatalogue = null)
     {
         InitializeComponent();
         Title=AppVersion.WindowTitle(Title);
@@ -78,9 +85,14 @@ public partial class TorrentWindow : Window
         _selectedSourceFolder = selectedFolder ?? "";
         CatalogueGrid.ItemsSource = _rows;
         _service = service ?? new ProjectTorrentService(stateDirectory ?? LibraryStorage.Load().TorrentCache);
+        _globalCatalogue = globalCatalogue ?? new GlobalCatalogue(_service.StateDirectory);
+        try { _catalogueState=CatalogueLocalState.Load(_service.StateDirectory); }
+        catch(Exception error) when(error is IOException or System.Text.Json.JsonException) { _catalogueState=new(); Log("Local catalogue preferences could not be read; showing all packages."); }
         CacheNote.Text = "Packages and resume data: " + _service.StateDirectory;
         _timer.Tick += (_, _) => RefreshTransfers();
         _timer.Start();
+        _catalogueTimer.Tick+=(_,_)=> { if(IsVisible && _operation == null && _shareWindow == null) BeginCatalogueRefresh(); };
+        _catalogueTimer.Start();
         _previewTimer.Tick += async (_,_) => {
             _previewTimer.Stop();
             if (_shareWindow == null || _loadingSourceChoices) return;
@@ -136,7 +148,7 @@ public partial class TorrentWindow : Window
 
     private IReadOnlyList<Row> SelectedRows() => CatalogueGrid.SelectedItems.Cast<Row>().ToArray() is { Length: > 0 } rows ? rows : throw new InvalidOperationException("Select one or more packages first.");
     private Row SelectedRow() => CatalogueGrid.SelectedItem as Row ?? throw new InvalidOperationException("Select a project in the catalogue first.");
-    private Row CreateRow(TorrentProject project) { _rowRevision++; return new(project, CatalogueArtwork.ForProject(project,ArchiveBox.Text,GamesBox.Text)); }
+    private Row CreateRow(TorrentProject project) { _rowRevision++; var row=new Row(project, CatalogueArtwork.ForProject(project,ArchiveBox.Text,GamesBox.Text)); row.SetPublication(_catalogueState.Publication(project,_approved)); return row; }
     private async Task RefreshCatalogueMembershipAsync()
     {
         if(_checkingMembership)return;
@@ -197,50 +209,92 @@ public partial class TorrentWindow : Window
             ?? throw new InvalidOperationException("Start downloading or seeding this project first.");
     }
 
-    private async Task LoadCatalogueAsync(string location, CancellationToken token)
+    private void BeginCatalogueRefresh()
     {
-        var catalogue = await TorrentCatalogue.LoadAsync(location, token);
-        _rows.Clear(); foreach (var entry in catalogue.Projects) _rows.Add(CreateRow(entry));
-        foreach (var transfer in _service.Transfers)
-            if (!_rows.Any(r => r.Project.InfoHash.Equals(transfer.Project.InfoHash, StringComparison.OrdinalIgnoreCase))) _rows.Add(CreateRow(transfer.Project));
-        CatalogueLocationBox.Text = location;
-        Log($"Loaded {catalogue.Projects.Count} project(s). Select a project to download.");
+        if (!_closing && !_refreshingCatalogue) _catalogueRefresh=RefreshGlobalCatalogueAsync();
     }
-
-    private async void Window_Loaded(object sender, RoutedEventArgs e)
+    private async Task RefreshGlobalCatalogueAsync()
     {
-        if (File.Exists(_service.LocalCataloguePath)) await RunAsync(token => LoadCatalogueAsync(_service.LocalCataloguePath, token));
-        else Log("Open a shared catalogue file/URL, or create a project share and export its catalogue.");
+        _refreshingCatalogue=true;
+        try
+        {
+            var local = File.Exists(_service.LocalCataloguePath) ? await TorrentCatalogue.LoadAsync(_service.LocalCataloguePath,_lifetime.Token) : new TorrentCatalogue();
+            foreach(var project in local.Projects) AddLocalRow(project);
+            GlobalCatalogueStatus.Text="Refreshing the global catalogue…";
+            var result=await _globalCatalogue.RefreshAsync(_lifetime.Token);
+            _approved.Clear(); foreach(var entry in result.Catalogue.Projects) _approved.Add(entry.InfoHash);
+            // Re-read local state after the network request: a share may have been created while fetching.
+            local = File.Exists(_service.LocalCataloguePath) ? await TorrentCatalogue.LoadAsync(_service.LocalCataloguePath,_lifetime.Token) : new TorrentCatalogue();
+            var entries=result.Catalogue.Projects.Concat(local.Projects).Concat(_service.Transfers.Select(t=>t.Project))
+                .DistinctBy(p=>p.InfoHash,StringComparer.OrdinalIgnoreCase).Where(p=>!_catalogueState.Hidden.Contains(p.InfoHash)).ToArray();
+            var wanted=entries.Select(p=>p.InfoHash).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach(var row in _rows.Where(r=>!wanted.Contains(r.Project.InfoHash)).ToArray()) _rows.Remove(row);
+            foreach(var entry in entries) AddLocalRow(entry);
+            foreach(var row in _rows) row.SetPublication(_catalogueState.Publication(row.Project,_approved));
+            GlobalCatalogueStatus.Text=result.Message;
+            Log(result.Offline ? result.Message : "Global catalogue refreshed. New submissions appear after the owner approves and merges them.");
+        }
+        catch(OperationCanceledException) when(_lifetime.IsCancellationRequested) { }
+        catch(Exception error) { GlobalCatalogueStatus.Text="Catalogue refresh failed. Local packages are still available."; Log(error.GetBaseException().Message); }
+        finally { _refreshingCatalogue=false; }
     }
-    private async void LoadCatalogue_Click(object sender, RoutedEventArgs e) => await RunAsync(token => LoadCatalogueAsync(CatalogueLocationBox.Text.Trim(), token));
-    private async void OpenCatalogue_Click(object sender, RoutedEventArgs e)
+    private Row? AddLocalRow(TorrentProject project)
     {
-        var dialog = new OpenFileDialog { Filter = "Project catalogues (*.json)|*.json", Title = "Open shared project catalogue" };
-        if (dialog.ShowDialog(this) == true) await RunAsync(token => LoadCatalogueAsync(dialog.FileName, token));
+        if(_catalogueState.Hidden.Contains(project.InfoHash))return null;
+        var row=_rows.FirstOrDefault(r=>r.Project.InfoHash.Equals(project.InfoHash,StringComparison.OrdinalIgnoreCase));
+        if(row==null) { row=CreateRow(project); _rows.Add(row); }
+        return row;
     }
-    private async void MyCatalogue_Click(object sender, RoutedEventArgs e)
-        => await RunAsync(token => LoadCatalogueAsync(_service.LocalCataloguePath, token));
+    private void Window_Loaded(object sender, RoutedEventArgs e) => BeginCatalogueRefresh();
+    private void RefreshCatalogue_Click(object sender, RoutedEventArgs e) => BeginCatalogueRefresh();
+    private void OpenCatalogueLink(string url)
+    {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute=true }); }
+        catch(Exception error) { Log(error.Message); }
+    }
+    private void MySubmissions_Click(object sender, RoutedEventArgs e) => OpenCatalogueLink(GlobalCatalogue.Website+"/pulls?q=is%3Apr+author%3A%40me");
+    private void ReviewSubmissions_Click(object sender, RoutedEventArgs e) => OpenCatalogueLink(GlobalCatalogue.Website+"/pulls");
+    private async void ConnectGitHub_Click(object sender, RoutedEventArgs e) => await RunAsync(async token=> {
+        Log("Opening GitHub sign-in. If GitHub CLI is missing, its installer opens first. Complete sign-in in the browser and terminal.");
+        await GitHubAccount.InstallAndSignInAsync(token);
+        using var api=new GitHubApi(await GitHubAccount.ReadTokenAsync(token));
+        Log("Connected to GitHub as "+await new CataloguePublisher(api).LoginAsync(token)+". You can now publish projects for approval.");
+    });
+    private async void PublishSelected_Click(object sender, RoutedEventArgs e) => await RunAsync(async token=> {
+        var projects=SelectedRows().Select(r=>r.Project).ToArray();
+        await SubmitProjectsAsync(projects,token);
+    });
+    private async Task SubmitProjectsAsync(IReadOnlyList<TorrentProject> projects,CancellationToken token)
+    {
+        using var api=new GitHubApi(await GitHubAccount.ReadTokenAsync(token));
+        Log("Submitting package metadata to GitHub for approval…");
+        var submission=await new CataloguePublisher(api).SubmitAsync(projects,token);
+        foreach(var project in projects) { _catalogueState.Submissions[project.InfoHash]=submission; _catalogueState.Hidden.Remove(project.InfoHash); }
+        _catalogueState.Save(_service.StateDirectory);
+        foreach(var row in _rows) row.SetPublication(_catalogueState.Publication(row.Project,_approved));
+        _shareWindow?.ShowSubmission(submission.Url,submission.State);
+        Log(submission.State+": "+submission.Url+". Approved submissions appear after the owner merges them. Keep seeding your package.");
+    }
+    private void ShowHidden_Click(object sender, RoutedEventArgs e)
+    {
+        try { _catalogueState.Hidden.Clear(); _catalogueState.Save(_service.StateDirectory); BeginCatalogueRefresh(); }
+        catch(Exception error) { Log(error.Message); }
+    }
     private async void Remove_Click(object sender, RoutedEventArgs e)
         => await RunAsync(async token =>
         {
             var rows = SelectedRows();
-            if (MessageBox.Show(this, $"Remove {rows.Count} selected package(s) from this list and My catalogue?\n\nTheir transfers will stop. Cached packages, source files and installed games will be kept. External catalogue files and URLs remain unchanged.",
+            if (MessageBox.Show(this, $"Hide {rows.Count} selected package(s) on this PC and stop their transfers?\n\nCached packages, source files and installed games will be kept. Approved entries remain in the global catalogue. Use Show hidden packages to restore them.",
                 "Remove selected packages", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             foreach (var row in rows)
             {
-                await _service.RemoveAsync(row.Project, token);
+                await _service.RemoveAsync(row.Project, token, keepLocalMetadata:true);
+                _catalogueState.Hidden.Add(row.Project.InfoHash);
                 _rows.Remove(row);
                 Log($"Removed: {row.Project.Name} ({row.Project.PackageKind}). Files kept.");
             }
+            _catalogueState.Save(_service.StateDirectory);
         });
-
-    private async void ExportCatalogue_Click(object sender, RoutedEventArgs e)
-    {
-        if (_rows.Count == 0) { Log("Load or create a catalogue first."); return; }
-        var dialog = new SaveFileDialog { Filter = "Project catalogue (*.json)|*.json", FileName = "indie-projects.json" };
-        if (dialog.ShowDialog(this) == true)
-            await RunAsync(async token => { await new TorrentCatalogue { Projects = _rows.Select(r => r.Project).ToList() }.SaveAsync(dialog.FileName, token); Log("Catalogue exported. Share this JSON file or host it at an HTTP/HTTPS URL. Keep a seeder running for its projects."); });
-    }
     private void BrowseArchive_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "Choose archive download destination" };
@@ -265,8 +319,7 @@ public partial class TorrentWindow : Window
         // Reuse the editor and its preview state; it no longer occupies catalogue layout space.
         object form=ShareHost.Content;
         ShareHost.Content=null;
-        _createdShares.Clear();
-        var window=new ProjectShareWindow(this,form,()=>_operation != null,()=>_operation?.Cancel(),()=>ExportCreatedShares(),ShareActionsPanel);
+        var window=new ProjectShareWindow(this,form,()=>_operation != null,()=>_operation?.Cancel(),OpenCatalogueLink,ShareActionsPanel);
         _shareWindow=window;
         window.Loaded += async (_,_) => {
             await RunAsync(async token=> {
@@ -284,13 +337,6 @@ public partial class TorrentWindow : Window
         };
         try { window.ShowDialog(); }
         finally { _previewTimer.Stop(); _previewPending=false; window.DetachForm(); ShareHost.Content=form; _shareWindow=null; }
-    }
-    private async void ExportCreatedShares()
-    {
-        if (_createdShares.Count == 0) return;
-        var dialog=new SaveFileDialog { Filter="Share Catalogue (*.json)|*.json", FileName="indie-share.json" };
-        if (dialog.ShowDialog(_shareWindow ?? (Window)this) == true)
-            await RunAsync(async token=> { await new TorrentCatalogue { Projects=_createdShares.ToList() }.SaveAsync(dialog.FileName,token); Log("Share catalogue saved: "+dialog.FileName); });
     }
     private void ShareKind_Changed(object sender, RoutedEventArgs e)
     {
@@ -362,35 +408,28 @@ public partial class TorrentWindow : Window
         if (_operation != null || _preview == null) return;
         var plans = _preview.ToArray();
         string icon = _previewIcon ?? "";
-        string name = plans[0].Name;
-        foreach (char invalid in Path.GetInvalidFileNameChars()) name = name.Replace(invalid,'_');
-        var dialog = new SaveFileDialog {
-            Title = "Save the catalogue file to send to recipients", Filter = "Share catalogue (*.json)|*.json",
-            FileName = name + "-share.json", DefaultExt = ".json", AddExtension = true
-        };
-        if (dialog.ShowDialog(_shareWindow ?? (Window)this) != true) return;
         await RunAsync(async token =>
         {
+            // Check sign-in before doing expensive packaging. Never persist this credential.
+            _ = await GitHubAccount.ReadTokenAsync(token);
             ConfigureNetwork();
             var trackers = TrackersBox.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var exported = new List<TorrentProject>();
+            var submitted = new List<TorrentProject>();
             foreach (var plan in plans)
             {
             Log($"Packaging {plan.PackageKind}: {plan.Name}…");
             var entry = await Task.Run(() => _service.CreateShareAsync(plan, trackers, token, icon), token);
-            if (!_createdShares.Any(p => p.InfoHash == entry.InfoHash)) _createdShares.Add(entry); _shareWindow?.EnableExport();
+            _catalogueState.Hidden.Remove(entry.InfoHash);
             var existingRow = _rows.FirstOrDefault(r => r.Project.InfoHash.Equals(entry.InfoHash, StringComparison.OrdinalIgnoreCase));
             var displayRow = CreateRow(entry);
             if (existingRow != null) { _rows[_rows.IndexOf(existingRow)] = displayRow; Log("Unchanged content: reusing snapshot " + entry.SnapshotDisplay); }
             else _rows.Add(displayRow);
             CatalogueGrid.SelectedItem = displayRow;
-            exported.Add(entry);
-            await new TorrentCatalogue { Projects = exported.ToList() }.SaveAsync(dialog.FileName,token);
+            submitted.Add(entry);
             await _service.StartAsync(entry, seed: true, token);
             }
-            Log("Share ready. Catalogue saved: " + dialog.FileName + ". Send this JSON file to recipients and keep Build Manager open while they download.");
-            _shareWindow?.ShowSaved(dialog.FileName);
-            _preview=null; CreateShareButton.IsEnabled=false; ShareSummary.Text="Share created — catalogue saved — seeding";
+            await SubmitProjectsAsync(submitted,token);
+            _preview=null; CreateShareButton.IsEnabled=false; ShareSummary.Text="Submitted for approval — seeding";
         });
     }
     private async void Download_Click(object sender, RoutedEventArgs e)
@@ -477,11 +516,12 @@ public partial class TorrentWindow : Window
     {
         if (_closed) return;
         if (_closing) { await _shutdown.Task; return; }
-        _closing = true; _timer.Stop(); _lifetime.Cancel();
+        _closing = true; _timer.Stop(); _catalogueTimer.Stop(); _lifetime.Cancel();
         _previewTimer.Stop();
         try
         {
             if (_operationTask != null) { try { await _operationTask; } catch { } }
+            if (_catalogueRefresh != null) { try { await _catalogueRefresh; } catch { } }
             await _service.DisposeAsync();
         }
         catch (Exception error) { Log("Transfer shutdown: " + error.Message); }
