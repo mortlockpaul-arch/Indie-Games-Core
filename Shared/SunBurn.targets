@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <SharedSunBurnProject Condition="'$(SharedSunBurnProject)' == ''">$(IndieGamesCoreRoot)\SunBurn.Decompiled\SynapseGaming-SunBurn-Pro.csproj</SharedSunBurnProject>
+    <UseSharedSunBurn Condition="'$(UseSharedSunBurn)' == ''">true</UseSharedSunBurn>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(UseSharedSunBurn)' == 'true' and '$(MSBuildProjectName)' != 'SynapseGaming-SunBurn-Pro'">
+    <_LegacySunBurnReference Include="@(Reference-&gt;WithMetadataValue('Filename', 'SynapseGaming-SunBurn-Pro'))" />
+  </ItemGroup>
+  <ItemGroup Condition="'@(_LegacySunBurnReference)' != '' and Exists('$(SharedSunBurnProject)')">
+    <Reference Remove="@(_LegacySunBurnReference)" />
+    <ProjectReference Include="$(SharedSunBurnProject)" />
+  </ItemGroup>
+  <Target Name="ExplainSharedSunBurn" BeforeTargets="PrepareForBuild" Condition="'@(_LegacySunBurnReference)' != ''">
+    <Error Condition="!Exists('$(SharedSunBurnProject)')" Text="Shared SunBurn source missing: $(SharedSunBurnProject). Restore it or set UseSharedSunBurn=false to use the original DLL." />
+    <Message Importance="High" Text="Using shared FNA SunBurn source: $(SharedSunBurnProject)" />
+  </Target>
+</Project>

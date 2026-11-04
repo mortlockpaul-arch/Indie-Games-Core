@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <UseSharedDigitalRune Condition="'$(UseSharedDigitalRune)' == ''">true</UseSharedDigitalRune>
+    <SharedDigitalRuneRoot Condition="'$(SharedDigitalRuneRoot)' == ''">$(IndieGamesCoreRoot)\DigitalRune\Build\Modern</SharedDigitalRuneRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(UseSharedDigitalRune)' == 'true'">
+    <_LegacyDigitalRuneReference Include="@(Reference->WithMetadataValue('Identity', 'DigitalRune'));@(Reference->WithMetadataValue('Identity', 'DigitalRune.Mathematics'));@(Reference->WithMetadataValue('Identity', 'DigitalRune.Geometry'));@(Reference->WithMetadataValue('Identity', 'DigitalRune.Physics'));@(Reference->WithMetadataValue('Identity', 'DigitalRune.Physics.Specialized'))" />
+    <Reference Remove="@(_LegacyDigitalRuneReference)" />
+    <ProjectReference Include="@(_LegacyDigitalRuneReference->'$(SharedDigitalRuneRoot)\%(Identity)\%(Identity).csproj')" />
+  </ItemGroup>
+  <Target Name="ExplainSharedDigitalRune" BeforeTargets="PrepareForBuild" Condition="'@(_LegacyDigitalRuneReference)' != ''">
+    <Error Condition="!Exists('$(SharedDigitalRuneRoot)\DigitalRune\DigitalRune.csproj')" Text="Shared DigitalRune source missing. Restore the fork or set UseSharedDigitalRune=false." />
+    <Message Importance="High" Text="Using shared open-source DigitalRune ($(GraphicsBackend)): $(SharedDigitalRuneRoot)" />
+  </Target>
+</Project>
+

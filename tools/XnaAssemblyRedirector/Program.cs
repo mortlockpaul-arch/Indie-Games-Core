@@ -35,6 +35,7 @@ internal static class Program
 
             var fnaTypes = LoadTypes(fnaPath);
             var stubTypes = LoadTypes(stubPath);
+            var replacement = LoadTypes(opts.GetValueOrDefault("replacement"));
             int failures = 0, patched = 0;
             foreach (var file in files)
             {
@@ -45,7 +46,19 @@ internal static class Program
                     var xna = module.AssemblyReferences.Where(r => r.Name.StartsWith("Microsoft.Xna.Framework", StringComparison.OrdinalIgnoreCase)).ToArray();
                     Console.WriteLine($"[{Path.GetFileName(file)}] XNA references: {xna.Length}");
                     foreach (var r in xna) Console.WriteLine($"  {r.FullName}");
-                    if (mode == "scan" || xna.Length == 0) continue;
+                    var dependentReferences = replacement == null ? Array.Empty<AssemblyNameReference>() :
+                        module.AssemblyReferences.Where(r => r.Name.Equals(replacement.Value.assembly.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
+                    if (mode == "scan" || (xna.Length == 0 && dependentReferences.Length == 0)) continue;
+                    foreach (var reference in dependentReferences)
+                    {
+                        Console.WriteLine($"  Replacement dependency: {reference.FullName} -> {replacement!.Value.assembly.FullName}");
+                        if (mode != "patch") continue;
+                        reference.Version = replacement!.Value.assembly.Version;
+                        reference.Culture = replacement.Value.assembly.Culture;
+                        reference.PublicKey = Array.Empty<byte>();
+                        reference.PublicKeyToken = replacement.Value.assembly.PublicKeyToken;
+                        reference.HasPublicKey = false;
+                    }
                     var unsupported = new SortedSet<string>(StringComparer.Ordinal);
 
                     var replacementAssemblies =

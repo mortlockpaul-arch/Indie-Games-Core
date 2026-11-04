@@ -1,0 +1,212 @@
+﻿using System;
+
+namespace HlslDecompiler.DirectXShaderModel;
+
+public class D3D10OperandTokenCollection
+{
+    private readonly D3D10Opcode _opcode;
+
+    public uint[] Tokens { get; }
+    public virtual int Count => Tokens.Length;
+
+    public D3D10OperandTokenCollection(uint[] paramTokens, D3D10Opcode opcode)
+    {
+        Tokens = paramTokens;
+        _opcode = opcode;
+    }
+
+    // Not for a declaration whose tokens are plain dwords.
+    public int OperandCount
+    {
+        get
+        {
+            int count = 0;
+            for (int i = 0; i < Tokens.Length; i = SkipOperand(i))
+            {
+                count++;
+            }
+            return count;
+        }
+    }
+
+    public Span<uint> GetSpan(int index)
+    {
+        int operandCount = 0;
+        for (int i = 0; i < Tokens.Length;)
+        {
+            int spanStart = i;
+            i = SkipOperand(i);
+
+            if (operandCount == index)
+            {
+                return new Span<uint>(Tokens, spanStart, i - spanStart);
+            }
+            operandCount++;
+        }
+        return new Span<uint>(Tokens, 0, 1);
+    }
+
+    // cb0[2], cb0[r0.x] or cb0[r0.x + 2].
+    public readonly struct OperandIndex
+    {
+        public D3D10OperandIndexRepresentation Representation { get; init; }
+        public uint Immediate { get; init; }
+        public int RelativeStart { get; init; }
+        public int RelativeLength { get; init; }
+
+        public bool IsRelative => RelativeLength != 0;
+    }
+
+    // Walks an operand index by index. GetParamIndexImmediate32 assumes every
+    // preceding index is one token, which a nested operand is not.
+    public OperandIndex[] GetOperandIndices(int operandIndex)
+    {
+        int start = GetOperandStart(operandIndex);
+        uint token = Tokens[start];
+        int i = start + 1;
+        if ((token & 0x80000000) != 0)
+        {
+            i++;
+        }
+
+        int indexDimension = (int)((token >> 20) & 3);
+        var indices = new OperandIndex[indexDimension];
+        for (int r = 0; r < indexDimension; r++)
+        {
+            var representation = (D3D10OperandIndexRepresentation)((token >> (22 + r * 3)) & 7);
+            uint immediate = 0;
+            int relativeStart = 0;
+            switch (representation)
+            {
+                case D3D10OperandIndexRepresentation.Immediate32:
+                    immediate = Tokens[i];
+                    i++;
+                    break;
+                case D3D10OperandIndexRepresentation.Immediate64:
+                    immediate = Tokens[i + 1];
+                    i += 2;
+                    break;
+                case D3D10OperandIndexRepresentation.Relative:
+                    relativeStart = i;
+                    i = SkipOperand(i);
+                    break;
+                case D3D10OperandIndexRepresentation.Immediate32PlusRelative:
+                    immediate = Tokens[i];
+                    relativeStart = i + 1;
+                    i = SkipOperand(i + 1);
+                    break;
+                case D3D10OperandIndexRepresentation.Immediate64PlusRelative:
+                    immediate = Tokens[i + 1];
+                    relativeStart = i + 2;
+                    i = SkipOperand(i + 2);
+                    break;
+                default:
+                    throw new NotImplementedException(representation.ToString());
+            }
+            indices[r] = new OperandIndex
+            {
+                Representation = representation,
+                Immediate = immediate,
+                RelativeStart = relativeStart,
+                RelativeLength = relativeStart == 0 ? 0 : i - relativeStart,
+            };
+        }
+        return indices;
+    }
+
+    // The register a relative index reads, and which of its components.
+    public (OperandType Type, int Number, byte Component) GetRelativeIndexOperand(
+        int operandIndex, int index)
+    {
+        OperandIndex operand = GetOperandIndices(operandIndex)[index];
+        uint token = Tokens[operand.RelativeStart];
+        return (
+            (OperandType)((token >> 12) & 0xFF),
+            (int)Tokens[operand.RelativeStart + 1],
+            (byte)((token >> 4) & 3));
+    }
+
+    private int GetOperandStart(int index)
+    {
+        int operandCount = 0;
+        for (int i = 0; i < Tokens.Length;)
+        {
+            int spanStart = i;
+            i = SkipOperand(i);
+            if (operandCount == index)
+            {
+                return spanStart;
+            }
+            operandCount++;
+        }
+        return 0;
+    }
+
+    // The index just past the operand at i. Relative indices are nested operands.
+    private int SkipOperand(int i)
+    {
+        uint token = Tokens[i];
+        i++;
+
+        bool isExtended = (token & 0x80000000) != 0;
+        if (isExtended)
+        {
+            i++;
+        }
+
+        OperandType operandType = (OperandType)((token >> 12) & 0xFF);
+        if (_opcode == D3D10Opcode.DclResource || _opcode == D3D10Opcode.DclThreadGroup)
+        {
+            return i + 2;
+        }
+
+        if (operandType == OperandType.Immediate32)
+        {
+            var componentSelection = (D3D10OperandNumComponents)(token & 3);
+            if (componentSelection == D3D10OperandNumComponents.Operand1Component)
+            {
+                i++;
+            }
+            else if (componentSelection == D3D10OperandNumComponents.Operand4Component)
+            {
+                i += 4;
+            }
+        }
+        else if (operandType == OperandType.Immediate64
+            && (D3D10OperandNumComponents)(token & 3) == D3D10OperandNumComponents.Operand4Component)
+        {
+            // Two doubles in four dwords. The component check excludes a typed
+            // UAV's return-type dword (0x5555), which also decodes as this type.
+            i += 4;
+        }
+
+        int indexDimension = (int)((token >> 20) & 3);
+        for (int r = 0; r < indexDimension; r++)
+        {
+            var indexRepresentation = (D3D10OperandIndexRepresentation)((token >> (22 + r * 3)) & 7);
+            switch (indexRepresentation)
+            {
+                case D3D10OperandIndexRepresentation.Immediate32:
+                    i++;
+                    break;
+                case D3D10OperandIndexRepresentation.Immediate64:
+                    i += 2;
+                    break;
+                case D3D10OperandIndexRepresentation.Relative:
+                    i = SkipOperand(i);
+                    break;
+                case D3D10OperandIndexRepresentation.Immediate32PlusRelative:
+                    i = SkipOperand(i + 1);
+                    break;
+                case D3D10OperandIndexRepresentation.Immediate64PlusRelative:
+                    i = SkipOperand(i + 2);
+                    break;
+                default:
+                    throw new NotImplementedException(indexRepresentation.ToString());
+            }
+        }
+
+        return i;
+    }
+
+}

@@ -1,26 +1,24 @@
 <Project>
-  <!-- Import this from D:\indie-game-archive\Directory.Build.targets, INSIDE its <Project>. -->
-  <!-- Explicitly opt in: -p:EnableXnaDllRedirect=true. Defaults OFF. -->
   <PropertyGroup>
     <EnableXnaDllRedirect Condition="'$(EnableXnaDllRedirect)' == ''">false</EnableXnaDllRedirect>
     <XnaRedirectRoot>C:\source\Indie-Games-Core\tools\XnaAssemblyRedirector</XnaRedirectRoot>
     <XnaRedirectTool>$(XnaRedirectRoot)\bin\Release\net9.0\XnaAssemblyRedirector.dll</XnaRedirectTool>
-    <XnaRedirectScript>$(XnaRedirectRoot)\Invoke-XnaRedirect.ps1</XnaRedirectScript>
-    <XnaRedirectFna>C:\source\Indie-Games-Core\FNA\bin\x64\Debug\net8.0\FNA.dll</XnaRedirectFna>
-    <XnaRedirectStub>C:\source\Indie-Games-Core\FNA.NetStub\bin\x64\Debug\net9.0\FNA.NetStub.dll</XnaRedirectStub>
-    <XnaRedirectOutput>$(IntermediateOutputPath)XnaRedirect\</XnaRedirectOutput>
+    <XnaRedirectFna Condition="'$(XnaRedirectFna)' == ''">C:\source\Indie-Games-Core\FNA\bin\x64\Debug\net8.0\FNA.dll</XnaRedirectFna>
+    <XnaRedirectStub Condition="'$(XnaRedirectStub)' == ''">C:\source\Indie-Games-Core\FNA.NetStub\bin\x64\Debug\net8.0-windows\FNA.NetStub.dll</XnaRedirectStub>
   </PropertyGroup>
-
-  <Target Name="PatchLegacyXnaReferences"
-          BeforeTargets="ResolveAssemblyReferences"
-          Condition="'$(EnableXnaDllRedirect)' == 'true' and '$(MSBuildProjectName)' != 'FNA' and Exists('$(MSBuildProjectDirectory)\584E07D1')">
-    <Error Condition="!Exists('$(XnaRedirectTool)')" Text="Build XnaAssemblyRedirector first: $(XnaRedirectTool)" />
-    <Error Condition="!Exists('$(XnaRedirectFna)')" Text="FNA.dll missing: $(XnaRedirectFna)" />
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(XnaRedirectScript)&quot; -InputFolder &quot;$(MSBuildProjectDirectory)\584E07D1&quot; -OutputFolder &quot;$(MSBuildProjectDirectory)\$(XnaRedirectOutput)&quot; -ToolDll &quot;$(XnaRedirectTool)&quot; -FnaDll &quot;$(XnaRedirectFna)&quot; -StubDll &quot;$(XnaRedirectStub)&quot;" />
-    <!-- Rewrite only references with a successfully patched DLL. -->
+  <Target Name="PatchLegacyXnaReferences" BeforeTargets="ResolveAssemblyReferences" Condition="('$(EnableXnaDllRedirect)' == 'true' or '@(_LegacySunBurnReference)' != '') and Exists('$(MSBuildProjectDirectory)\584E07D1')">
+    <PropertyGroup>
+      <AssemblySearchPaths>{HintPathFromItem};$(AssemblySearchPaths)</AssemblySearchPaths>
+      <_XnaPatchedFolder>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)XnaRedirect</_XnaPatchedFolder>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(XnaRedirectTool)')" Text="XNA redirector missing: $(XnaRedirectTool)" />
     <ItemGroup>
-      <Reference Update="@(Reference)" Condition="Exists('$(MSBuildProjectDirectory)\$(XnaRedirectOutput)%(Reference.Filename)%(Reference.Extension)')">
-        <HintPath>$(MSBuildProjectDirectory)\$(XnaRedirectOutput)%(Reference.Filename)%(Reference.Extension)</HintPath>
+      <_SharedSunBurnAssembly Include="@(_ResolvedProjectReferencePaths-&gt;WithMetadataValue('Filename', 'SynapseGaming-SunBurn-Pro'))" />
+    </ItemGroup>
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(XnaRedirectRoot)\Invoke-XnaRedirect.ps1&quot; -InputFolder &quot;$(MSBuildProjectDirectory)\584E07D1&quot; -OutputFolder &quot;$(_XnaPatchedFolder)&quot; -ToolDll &quot;$(XnaRedirectTool)&quot; -FnaDll &quot;$(XnaRedirectFna)&quot; -StubDll &quot;$(XnaRedirectStub)&quot; -ReplacementDll &quot;@(_SharedSunBurnAssembly)&quot;" />
+    <ItemGroup>
+      <Reference Update="@(Reference)" Condition="Exists('$(_XnaPatchedFolder)\%(Reference.Identity).dll')">
+        <HintPath>$(_XnaPatchedFolder)\%(Reference.Identity).dll</HintPath>
         <Private>true</Private>
       </Reference>
     </ItemGroup>

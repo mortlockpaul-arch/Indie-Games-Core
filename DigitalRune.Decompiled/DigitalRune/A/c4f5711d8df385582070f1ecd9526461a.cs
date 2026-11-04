@@ -1,0 +1,8 @@
+namespace A;
+
+internal enum c4f5711d8df385582070f1ecd9526461a
+{
+	cbb5fed9d185d30316d06b18b5ec7c4e4,
+	c46d304ced64408976afde122d63015f5,
+	c4459eeb76f7f4109a5269f4381ed3c6a
+}

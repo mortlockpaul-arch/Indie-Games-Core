@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net9.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><PlatformTarget>x64</PlatformTarget><ApplicationIcon>../../IndieGames.BuildManager/DashboardIcon.ico</ApplicationIcon></PropertyGroup>
+ <ItemGroup>
+  <Reference Include="FNA"><HintPath>../../FNA.Contents/bin/x64/Debug/net9.0-windows/FNA.dll</HintPath></Reference>
+  <None Include="../../FNA.Contents/x64/*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  <None Include="../../FNA/licenses/*" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  <EmbeddedResource Include="../../IndieGames.BuildManager/Assets/KnownShaders/*.fx" LogicalName="ShaderSources.%(Filename)%(Extension)" />
+ </ItemGroup>
+ <Target Name="CompilePreviewShaders" BeforeTargets="BeforeBuild">
+  <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\Build-Effects.ps1&quot; -SourceDirectory &quot;$(MSBuildProjectDirectory)\..\..\IndieGames.BuildManager\Assets\KnownShaders&quot; -OutputDirectory &quot;$(TargetDir)Effects&quot;" />
+  <ItemGroup><_PreviewEffect Include="$(TargetDir)Effects/*.fxb" /></ItemGroup>
+ </Target>
+ <Target Name="PublishPreviewShaders" AfterTargets="Publish"><Copy SourceFiles="@(_PreviewEffect)" DestinationFolder="$(PublishDir)Effects" /></Target>
+</Project>

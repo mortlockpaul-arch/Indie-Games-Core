@@ -1,0 +1,502 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace HlslDecompiler.DirectXShaderModel;
+
+// D3D10_SB_OPCODE_TYPE
+public enum D3D10Opcode
+{
+    Add,
+    And,
+    Break,
+    BreakC,
+    Call,
+    CallC,
+    Case,
+    Continue,
+    ContinueC,
+    Cut,
+    Default,
+    DerivRtx,
+    DerivRty,
+    Discard,
+    Div,
+    Dp2,
+    Dp3,
+    Dp4,
+    Else,
+    Emit,
+    EmitThenCut,
+    EndIf,
+    EndLoop,
+    EndSwitch,
+    Eq,
+    Exp,
+    Frc,
+    Ftoi,
+    Ftou,
+    GE,
+    IAdd,
+    If,
+    Ieq,
+    Ige,
+    Ilt,
+    IMad,
+    IMax,
+    IMin,
+    IMul,
+    Ine,
+    INeg,
+    IShl,
+    IShr,
+    IToF,
+    Label,
+    LD,
+    LDMS,
+    Log,
+    Loop,
+    LT,
+    Mad,
+    Min,
+    Max,
+    CustomData,
+    Mov,
+    MovC,
+    Mul,
+    Ne,
+    Nop,
+    Not,
+    Or,
+    ResInfo,
+    Ret,
+    RetC,
+    RoundNe,
+    RoundNi,
+    RoundPi,
+    RoundZ,
+    Rsq,
+    Sample,
+    SampleC,
+    SampleCLZ,
+    SampleL,
+    SampleD,
+    SampleB,
+    Sqrt,
+    Swtich,
+    SinCos,
+    Udiv,
+    ULT,
+    UGE,
+    UMul,
+    Umad,
+    UMax,
+    UMin,
+    UShr,
+    UTof,
+    Xor,
+    DclResource,
+    DclConstantBuffer,
+    DclSampler,
+    DclIndexRange,
+    DclGSOutputPrimitiveTopology,
+    DclGSInputPrimitive,
+    DclGSMaxOutputVertexCount,
+    DclInput,
+    DclInputSgv,
+    DclInputSiv,
+    DclInputPS,
+    DclInputPSSgv,
+    DclInputPSSiv,
+    DclOutput,
+    DclOutputSgv,
+    DclOutputSiv,
+    DclTemps,
+    DclIndexableTemp,
+    DclGlobalFlags,
+    Reserved0,
+    Lod,
+    Gather4,
+    SamplePos,
+    SampleInfo,
+    Reserved1,
+    HsDecls,
+    HsControlPointPhase,
+    HsForkPhase,
+    HsJoinPhase,
+    EmitStream,
+    CutStream,
+    EmitThenCutStream,
+    InterfaceCall,
+    BufInfo,
+    DerivRtxCoarse,
+    DerivRtxFine,
+    DerivRtyCoarse,
+    DerivRtyFine,
+    Gather4C,
+    Gather4Po,
+    Gather4PoC,
+    Rcp,
+    F32ToF16,
+    F16ToF32,
+    UAddC,
+    USubB,
+    CountBits,
+    FirstBitHi,
+    FirstBitLo,
+    FirstBitSHi,
+    UBFE,
+    IBFE,
+    BFI,
+    BFRev,
+    SwapC,
+    DclStream,
+    DclFunctionBody,
+    DclFunctionTable,
+    DclInterface,
+    DclInputControlPointCount,
+    DclOutputControlPointCount,
+    DclTessDomain,
+    DclTessPartitioning,
+    DclTessOutputPrimitive,
+    DclHSMaxTessFactor,
+    DclHSForkPhaseInstanceCount,
+    DclHSJoinPhaseInstanceCount,
+    DclThreadGroup,
+    DclUnorderedAccessViewTyped,
+    DclUnorderedAccessViewRaw,
+    DclUnorderedAccessViewStructured,
+    DclThreadGroupSharedMemoryRaw,
+    DclThreadGroupSharedMemoryStructured,
+    DclResourceRaw,
+    DclResourceStructured,
+    LdUAVTyped,
+    StoreUAVTyped,
+    LdRaw,
+    StoreRaw,
+    LdStructured,
+    StoreStructured,
+    AtomicAnd,
+    AtomicOr,
+    AtomicXor,
+    AtomicCmpStore,
+    AtomicIAdd,
+    AtomicIMax,
+    AtomicIMin,
+    AtomicUMax,
+    AtomicUMin,
+    ImmAtomicAlloc,
+    ImmAtomicConsume,
+    ImmAtomicIAdd,
+    ImmAtomicAnd,
+    ImmAtomicOr,
+    ImmAtomicXor,
+    ImmAtomicExch,
+    ImmAtomicCmpExch,
+    ImmAtomicIMax,
+    ImmAtomicIMin,
+    ImmAtomicUMax,
+    ImmAtomicUMin,
+    Sync,
+    DAdd,
+    DMax,
+    DMin,
+    DMul,
+    DEq,
+    DGe,
+    DLt,
+    DNe,
+    DMov,
+    DMovC,
+    DToF,
+    FToD,
+    EvalSnapped,
+    EvalSampleIndex,
+    EvalCentroid,
+    DclGSInstanceCount,
+    Abort,
+    DebugBreak,
+    D3D11Reserved0,
+    DDiv,
+    DFMA,
+    DRCP,
+    MSAD,
+    DToI,
+    DToU,
+    IToD,
+    UToD,
+    D3d111Reserved0
+}
+
+public static class D3D10OpcodeExtensions
+{
+    // Declarations use bits 11+ for their own fields, so instruction flags such as
+    // saturate must not be read from them.
+    private static readonly HashSet<D3D10Opcode> Declarations =
+        [.. Enum.GetValues<D3D10Opcode>().Where(o => o.ToString().StartsWith("Dcl"))];
+
+    public static bool IsDeclaration(this D3D10Opcode opcode)
+    {
+        return Declarations.Contains(opcode);
+    }
+
+    // Opcodes whose token carries the test-zero/test-nonzero bit.
+    public static bool HasBooleanTest(this D3D10Opcode opcode)
+    {
+        switch (opcode)
+        {
+            case D3D10Opcode.If:
+            case D3D10Opcode.BreakC:
+            case D3D10Opcode.ContinueC:
+            case D3D10Opcode.RetC:
+            case D3D10Opcode.CallC:
+            case D3D10Opcode.Discard:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>The interlocked operations that return no original value.</summary>
+    public static bool IsAtomic(this D3D10Opcode opcode)
+    {
+        switch (opcode)
+        {
+            case D3D10Opcode.AtomicIAdd:
+            case D3D10Opcode.AtomicAnd:
+            case D3D10Opcode.AtomicOr:
+            case D3D10Opcode.AtomicXor:
+            case D3D10Opcode.AtomicIMax:
+            case D3D10Opcode.AtomicIMin:
+            case D3D10Opcode.AtomicUMax:
+            case D3D10Opcode.AtomicUMin:
+            case D3D10Opcode.AtomicCmpStore:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// The imm_ interlocked operations, whose extra destination returns the original
+    /// value (HLSL's trailing out parameter).
+    /// </summary>
+    public static bool IsImmediateAtomic(this D3D10Opcode opcode)
+    {
+        switch (opcode)
+        {
+            case D3D10Opcode.ImmAtomicAlloc:
+            case D3D10Opcode.ImmAtomicConsume:
+            case D3D10Opcode.ImmAtomicIAdd:
+            case D3D10Opcode.ImmAtomicAnd:
+            case D3D10Opcode.ImmAtomicOr:
+            case D3D10Opcode.ImmAtomicXor:
+            case D3D10Opcode.ImmAtomicIMax:
+            case D3D10Opcode.ImmAtomicIMin:
+            case D3D10Opcode.ImmAtomicUMax:
+            case D3D10Opcode.ImmAtomicUMin:
+            case D3D10Opcode.ImmAtomicExch:
+            case D3D10Opcode.ImmAtomicCmpExch:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// The HLSL intrinsic for an interlocked operation. Signed and unsigned min/max
+    /// share a name; the operand types pick the variant.
+    /// </summary>
+    public static string AtomicMethodName(this D3D10Opcode opcode)
+    {
+        return opcode switch
+        {
+            D3D10Opcode.AtomicIAdd => "InterlockedAdd",
+            D3D10Opcode.AtomicAnd => "InterlockedAnd",
+            D3D10Opcode.AtomicOr => "InterlockedOr",
+            D3D10Opcode.AtomicXor => "InterlockedXor",
+            D3D10Opcode.AtomicIMax or D3D10Opcode.AtomicUMax => "InterlockedMax",
+            D3D10Opcode.AtomicIMin or D3D10Opcode.AtomicUMin => "InterlockedMin",
+            D3D10Opcode.AtomicCmpStore => "InterlockedCompareStore",
+            D3D10Opcode.ImmAtomicIAdd => "InterlockedAdd",
+            D3D10Opcode.ImmAtomicAnd => "InterlockedAnd",
+            D3D10Opcode.ImmAtomicOr => "InterlockedOr",
+            D3D10Opcode.ImmAtomicXor => "InterlockedXor",
+            D3D10Opcode.ImmAtomicIMax or D3D10Opcode.ImmAtomicUMax => "InterlockedMax",
+            D3D10Opcode.ImmAtomicIMin or D3D10Opcode.ImmAtomicUMin => "InterlockedMin",
+            D3D10Opcode.ImmAtomicExch => "InterlockedExchange",
+            D3D10Opcode.ImmAtomicCmpExch => "InterlockedCompareExchange",
+            _ => throw new NotImplementedException(opcode.ToString()),
+        };
+    }
+
+    public static bool IsInteger(this D3D10Opcode opcode)
+    {
+        switch (opcode)
+        {
+            case D3D10Opcode.Case:
+            // Its only immediate operand is the integer texel address.
+            case D3D10Opcode.LD:
+            case D3D10Opcode.LDMS:
+            case D3D10Opcode.IAdd:
+            case D3D10Opcode.IShl:
+            case D3D10Opcode.IShr:
+            case D3D10Opcode.UShr:
+            case D3D10Opcode.UBFE:
+            case D3D10Opcode.IBFE:
+            case D3D10Opcode.BFI:
+            case D3D10Opcode.Ieq:
+            case D3D10Opcode.Ige:
+            case D3D10Opcode.UGE:
+            case D3D10Opcode.ULT:
+            case D3D10Opcode.Ilt:
+            case D3D10Opcode.IMad:
+            case D3D10Opcode.MSAD:
+            case D3D10Opcode.IMin:
+            case D3D10Opcode.IMul:
+            case D3D10Opcode.Udiv:
+            case D3D10Opcode.Umad:
+            // The carry and the borrow are bits of an unsigned sum.
+            case D3D10Opcode.UAddC:
+            case D3D10Opcode.USubB:
+            case D3D10Opcode.UMax:
+            case D3D10Opcode.UMin:
+            case D3D10Opcode.UMul:
+            case D3D10Opcode.Ine:
+            case D3D10Opcode.INeg:
+            case D3D10Opcode.IMax:
+            case D3D10Opcode.Discard:
+            // Atomics exist only over integers.
+            case D3D10Opcode.AtomicIAdd:
+            case D3D10Opcode.AtomicAnd:
+            case D3D10Opcode.AtomicOr:
+            case D3D10Opcode.AtomicXor:
+            case D3D10Opcode.AtomicIMax:
+            case D3D10Opcode.AtomicIMin:
+            case D3D10Opcode.AtomicUMax:
+            case D3D10Opcode.AtomicUMin:
+            case D3D10Opcode.AtomicCmpStore:
+            case D3D10Opcode.ImmAtomicIAdd:
+            case D3D10Opcode.ImmAtomicAnd:
+            case D3D10Opcode.ImmAtomicOr:
+            case D3D10Opcode.ImmAtomicXor:
+            case D3D10Opcode.ImmAtomicIMax:
+            case D3D10Opcode.ImmAtomicIMin:
+            case D3D10Opcode.ImmAtomicUMax:
+            case D3D10Opcode.ImmAtomicUMin:
+            case D3D10Opcode.ImmAtomicExch:
+            case D3D10Opcode.ImmAtomicCmpExch:
+            case D3D10Opcode.BufInfo:
+            case D3D10Opcode.CountBits:
+            case D3D10Opcode.FirstBitLo:
+            case D3D10Opcode.FirstBitHi:
+            case D3D10Opcode.FirstBitSHi:
+            case D3D10Opcode.BFRev:
+            case D3D10Opcode.F16ToF32:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// What an instruction reads its register operands as. Unknown means the
+    /// operand is passed through untyped (mov, movc values, bitwise ops).
+    /// </summary>
+    public static ValueKind ConsumedKind(this D3D10Opcode opcode)
+    {
+        switch (opcode)
+        {
+            case D3D10Opcode.Mov:
+            case D3D10Opcode.MovC:
+            // The swapped pair passes through untyped like a movc's values.
+            case D3D10Opcode.SwapC:
+            case D3D10Opcode.And:
+            case D3D10Opcode.Or:
+            case D3D10Opcode.Xor:
+            case D3D10Opcode.Not:
+                return ValueKind.Unknown;
+            case D3D10Opcode.If:
+            case D3D10Opcode.BreakC:
+            case D3D10Opcode.ContinueC:
+            case D3D10Opcode.RetC:
+            case D3D10Opcode.CallC:
+            case D3D10Opcode.Discard:
+                return ValueKind.Bits;
+            case D3D10Opcode.IToF:
+            case D3D10Opcode.UTof:
+            // A conversion to double reads an integer too.
+            case D3D10Opcode.IToD:
+            case D3D10Opcode.UToD:
+            // Mip levels and element/byte offsets.
+            case D3D10Opcode.ResInfo:
+            case D3D10Opcode.BufInfo:
+            case D3D10Opcode.LdStructured:
+            case D3D10Opcode.LdRaw:
+            case D3D10Opcode.StoreRaw:
+            case D3D10Opcode.Swtich:
+                return ValueKind.Integer;
+            case D3D10Opcode.Ftoi:
+            case D3D10Opcode.Ftou:
+            case D3D10Opcode.F32ToF16:
+                return ValueKind.Float;
+            default:
+                return opcode.IsInteger() ? ValueKind.Integer : ValueKind.Float;
+        }
+    }
+
+    /// <summary>
+    /// What an instruction writes. Comparisons write all-ones/all-zero masks.
+    /// resinfo and ld_structured depend on the instruction and are answered elsewhere.
+    /// </summary>
+    public static ValueKind ProducedKind(this D3D10Opcode opcode)
+    {
+        switch (opcode)
+        {
+            case D3D10Opcode.Mov:
+            case D3D10Opcode.MovC:
+            // The swapped pair keeps the type of what was moved in.
+            case D3D10Opcode.SwapC:
+            case D3D10Opcode.And:
+            case D3D10Opcode.Or:
+            case D3D10Opcode.Xor:
+            case D3D10Opcode.Not:
+            case D3D10Opcode.ResInfo:
+            case D3D10Opcode.LdStructured:
+                return ValueKind.Unknown;
+            case D3D10Opcode.BufInfo:
+                return ValueKind.Integer;
+            // An append/consume buffer slot index.
+            case D3D10Opcode.ImmAtomicAlloc:
+            case D3D10Opcode.ImmAtomicConsume:
+                return ValueKind.Integer;
+            case D3D10Opcode.LdRaw:
+                return ValueKind.Integer;
+            case D3D10Opcode.LT:
+            case D3D10Opcode.GE:
+            case D3D10Opcode.Eq:
+            case D3D10Opcode.Ne:
+            case D3D10Opcode.Ilt:
+            case D3D10Opcode.Ige:
+            case D3D10Opcode.Ieq:
+            case D3D10Opcode.Ine:
+            case D3D10Opcode.ULT:
+            case D3D10Opcode.UGE:
+                return ValueKind.Bits;
+            case D3D10Opcode.Ftoi:
+            case D3D10Opcode.Ftou:
+            // Half float bits.
+            case D3D10Opcode.F32ToF16:
+                return ValueKind.Integer;
+            case D3D10Opcode.IToF:
+            case D3D10Opcode.UTof:
+            case D3D10Opcode.F16ToF32:
+            // A texel, though the address is integer.
+            case D3D10Opcode.LD:
+            case D3D10Opcode.LDMS:
+                return ValueKind.Float;
+            default:
+                return opcode.IsInteger() ? ValueKind.Integer : ValueKind.Float;
+        }
+    }
+}

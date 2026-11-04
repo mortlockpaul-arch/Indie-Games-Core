@@ -1,0 +1,16 @@
+<Project>
+  <ItemGroup Condition="'$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe'">
+    <None Update="Content\**\*" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <Content Update="Content\**\*" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <!-- Spectrum snapshots and firmware ROMs may live beside the executable. -->
+    <_SpectrumSnapshot Include="**\*.z80;**\*.rom"
+      Exclude="$(DefaultItemExcludes);bin\**;obj\**;**\bin\**;**\obj\**;584E*\**;**\584E*\**;**\shader-repair-backups\**;**\font-repair-backups\**" />
+    <None Remove="@(_SpectrumSnapshot)" />
+    <None Include="@(_SpectrumSnapshot)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    <!-- xCharEdit definitions are read directly from folders such as chardef. -->
+    <_CharacterDefinition Include="**\*.zsx;**\*.zmx"
+      Exclude="$(DefaultItemExcludes);bin\**;obj\**;**\bin\**;**\obj\**;584E*\**;**\584E*\**;**\.backups\**;**\backups\**" />
+    <None Remove="@(_CharacterDefinition)" />
+    <None Include="@(_CharacterDefinition)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+  </ItemGroup>
+</Project>

@@ -10,18 +10,18 @@ public static class GameLogger
     private static readonly object LockObject = new object();
 
     private static bool _initialized;
-    private static string _logFile;
+    private static string? _logFile;
 
-    public static string LogFile => _logFile;
+    public static string? LogFile => _logFile;
 
-    public static void Initialize(string gameName = null, string solutionRoot = null)
+    public static void Initialize(string? gameName = null, string? solutionRoot = null)
     {
         if (_initialized)
             return;
 
         _initialized = true;
 
-        string name = gameName;
+        string? name = gameName;
 
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -37,7 +37,7 @@ public static class GameLogger
 
         name = SanitizeFileName(name);
 
-        string root = solutionRoot ?? FindSolutionRoot();
+        string? root = solutionRoot ?? FindSolutionRoot();
 
         string logDirectory = root != null
             ? Path.Combine(root, "logs")
@@ -106,9 +106,9 @@ public static class GameLogger
         Write("Logger initialized");
     }
 
-    private static string FindSolutionRoot()
+    private static string? FindSolutionRoot()
     {
-        DirectoryInfo directory = new DirectoryInfo(
+        DirectoryInfo? directory = new DirectoryInfo(
             AppContext.BaseDirectory
         );
 

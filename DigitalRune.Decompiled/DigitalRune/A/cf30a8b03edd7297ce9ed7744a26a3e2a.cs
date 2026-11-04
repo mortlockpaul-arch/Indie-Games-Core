@@ -1,0 +1,50 @@
+using System;
+
+namespace A;
+
+internal class cf30a8b03edd7297ce9ed7744a26a3e2a : cbee41f843ad04ef2334dc84014e75e22
+{
+	internal readonly ce00443c934adf9e4d872e08c311ecca9 c8d899d4643fb0fa43098099cf734c69c;
+
+	internal readonly ce00443c934adf9e4d872e08c311ecca9 ca3d2c55fff77046f356d5f56f38e01e1;
+
+	internal ce00443c934adf9e4d872e08c311ecca9 c417a5b78d1b20a6d5f89a8904f3051aa => c8d899d4643fb0fa43098099cf734c69c;
+
+	internal ce00443c934adf9e4d872e08c311ecca9 c9e0ce56c2149965e081c4ceef756f156 => ca3d2c55fff77046f356d5f56f38e01e1;
+
+	internal cf30a8b03edd7297ce9ed7744a26a3e2a(bool cdf6f9838d2910a5f01aae78d0d68eae1, ce00443c934adf9e4d872e08c311ecca9 c8d899d4643fb0fa43098099cf734c69c, ce00443c934adf9e4d872e08c311ecca9 ca3d2c55fff77046f356d5f56f38e01e1)
+		: base(cdf6f9838d2910a5f01aae78d0d68eae1)
+	{
+		this.c8d899d4643fb0fa43098099cf734c69c = c8d899d4643fb0fa43098099cf734c69c;
+		this.ca3d2c55fff77046f356d5f56f38e01e1 = ca3d2c55fff77046f356d5f56f38e01e1;
+	}
+
+	internal static int ca357b586799be68725c3ebc0634472bf(byte[] caea7c8eeab7dec52f3eabd5619c94714, byte[] ca454de1edbb32f53a41edb0cacb86240, int c39291411c9363c8c148a1afc376604a8)
+	{
+		byte[] array = new byte[2];
+		array = BitConverter.GetBytes((short)caea7c8eeab7dec52f3eabd5619c94714.Length);
+		array.CopyTo(ca454de1edbb32f53a41edb0cacb86240, c39291411c9363c8c148a1afc376604a8);
+		c39291411c9363c8c148a1afc376604a8 += 2;
+		caea7c8eeab7dec52f3eabd5619c94714.CopyTo(ca454de1edbb32f53a41edb0cacb86240, c39291411c9363c8c148a1afc376604a8);
+		c39291411c9363c8c148a1afc376604a8 += caea7c8eeab7dec52f3eabd5619c94714.Length;
+		return c39291411c9363c8c148a1afc376604a8;
+	}
+
+	internal static byte[] c64e4c17b371fa47bc8e3802602631033(byte[] caea7c8eeab7dec52f3eabd5619c94714, ref int c39291411c9363c8c148a1afc376604a8)
+	{
+		int num = c68ca6617c26c8d07e1d3552c202b8862.ccf0b10fedac007c4f73ef13a38a96900(caea7c8eeab7dec52f3eabd5619c94714, c39291411c9363c8c148a1afc376604a8);
+		c39291411c9363c8c148a1afc376604a8 += 2;
+		byte[] array = new byte[num];
+		Array.Copy(caea7c8eeab7dec52f3eabd5619c94714, c39291411c9363c8c148a1afc376604a8, array, 0, num);
+		c39291411c9363c8c148a1afc376604a8 += num;
+		return array;
+	}
+
+	internal static cf30a8b03edd7297ce9ed7744a26a3e2a c7fead2fa029058e5207ca992ffd0e474(byte[] c64f632f47ec42f89161439dfec6e213c)
+	{
+		int c39291411c9363c8c148a1afc376604a = 3;
+		byte[] c8eea6fe5a82bc3c0867f6cf9ae7c0eea = c64e4c17b371fa47bc8e3802602631033(c64f632f47ec42f89161439dfec6e213c, ref c39291411c9363c8c148a1afc376604a);
+		byte[] c8eea6fe5a82bc3c0867f6cf9ae7c0eea2 = c64e4c17b371fa47bc8e3802602631033(c64f632f47ec42f89161439dfec6e213c, ref c39291411c9363c8c148a1afc376604a);
+		return new cf30a8b03edd7297ce9ed7744a26a3e2a(cdf6f9838d2910a5f01aae78d0d68eae1: false, new ce00443c934adf9e4d872e08c311ecca9(1, c8eea6fe5a82bc3c0867f6cf9ae7c0eea), new ce00443c934adf9e4d872e08c311ecca9(1, c8eea6fe5a82bc3c0867f6cf9ae7c0eea2));
+	}
+}

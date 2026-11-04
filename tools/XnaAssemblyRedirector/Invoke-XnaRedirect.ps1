@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory)][string]$ToolDll,
     [Parameter(Mandatory)][string]$FnaDll,
     [string]$StubDll = '',
+    [string]$ReplacementDll = '',
     [switch]$WhatIf
 )
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,10 @@ $files = @(Get-ChildItem -LiteralPath $InputFolder -Filter '*.dll' -File)
 foreach ($file in $files) {
     $argsList = @($ToolDll, '--mode', $(if ($WhatIf) { 'verify' } else { 'patch' }), '--input', $file.FullName, '--fna', $FnaDll, '--output', $OutputFolder)
     if ($StubDll -and (Test-Path -LiteralPath $StubDll)) { $argsList += @('--stub', $StubDll) }
+    if ($ReplacementDll) {
+        if (-not (Test-Path -LiteralPath $ReplacementDll)) { throw "Replacement library missing: $ReplacementDll" }
+        $argsList += @('--replacement', $ReplacementDll)
+    }
     & dotnet @argsList
     if ($LASTEXITCODE -notin @(0,2)) { throw "Redirector failed for $($file.Name): $LASTEXITCODE" }
 }

@@ -1,0 +1,7 @@
+namespace A;
+
+internal enum c7568343d418774bd26eccbc9a38d91cb
+{
+	cc879e091767a63f69532383d63446641,
+	c4b1267eb2f42dd3dc4d902b23137521c
+}

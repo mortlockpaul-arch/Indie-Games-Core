@@ -1,0 +1,48 @@
+﻿using HlslDecompiler.DirectXShaderModel;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace HlslDecompiler.Hlsl.FlowControl;
+
+public class LoopStatement : IStatement
+{
+    // Null if unbounded
+    public uint? RepeatCount { get; }
+
+    // Run-time trip count: `loop aL, iN` where iN is a uniform, not a defi.
+    public HlslTreeNode RepeatCountNode { get; set; }
+
+    // Only `loop aL, iN` has a counter register the body can index constants by.
+    public bool HasLoopCounter { get; set; }
+    public IList<IStatement> Body { get; } = [];
+    public IDictionary<RegisterComponentKey, HlslTreeNode> Inputs { get; }
+    public IDictionary<RegisterComponentKey, HlslTreeNode> Outputs { get; }
+
+    public bool IsParsed { get; set; } = false;
+
+    public TempAssignmentNode Initializer { get; set; }
+    public HlslTreeNode ContinueCondition { get; set; }
+    public TempAssignmentNode Increment { get; set; }
+
+    public bool IsCountedLoop => Initializer != null;
+
+    public LoopStatement(uint? repeatCount, IDictionary<RegisterComponentKey, HlslTreeNode> inputs)
+    {
+        RepeatCount = repeatCount;
+        Inputs = inputs.ToDictionary();
+        Outputs = inputs.ToDictionary();
+    }
+
+    /// <summary>
+    /// None are named: initializer and increment are assignments themselves, the
+    /// condition is a predicate (<see cref="IStatement.NamedHeldNodes"/>), and the
+    /// trip count is read by the loop before it starts.
+    /// </summary>
+    public IEnumerable<HeldSlot> HeldSlots =>
+    [
+        HeldSlot.WrittenAgain(() => Initializer),
+        HeldSlot.WrittenAgain(() => ContinueCondition),
+        HeldSlot.WrittenAgain(() => Increment),
+        HeldSlot.WrittenAgain(() => RepeatCountNode),
+    ];
+}

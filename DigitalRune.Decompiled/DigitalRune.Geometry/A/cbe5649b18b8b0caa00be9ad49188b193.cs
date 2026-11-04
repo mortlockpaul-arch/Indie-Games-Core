@@ -1,0 +1,18 @@
+using DigitalRune.Geometry.Shapes;
+
+namespace A;
+
+internal interface cbe5649b18b8b0caa00be9ad49188b193<c96c92d0bb3e5901860b75aee31593453>
+{
+	Aabb c3e263e990bc8d6c3a2d636ac7a19c6c6 { get; set; }
+
+	cbe5649b18b8b0caa00be9ad49188b193<c96c92d0bb3e5901860b75aee31593453> c6d3fb34101b9e1ce92055c2914d2d1de { get; set; }
+
+	cbe5649b18b8b0caa00be9ad49188b193<c96c92d0bb3e5901860b75aee31593453> c2d9d869d0c8fd5fb55f452375f580a4a { get; set; }
+
+	cbe5649b18b8b0caa00be9ad49188b193<c96c92d0bb3e5901860b75aee31593453> c551fa69e7c0ec492ab91daa4199210a2 { get; }
+
+	bool cfd73e16b19bb8bde65db991a787eb5ad { get; }
+
+	c96c92d0bb3e5901860b75aee31593453 c652f269a40a2519b8658ffbade581b4e { get; }
+}

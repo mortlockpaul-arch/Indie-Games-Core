@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><TargetFramework>net9.0-windows</TargetFramework><AssemblyName>SynapseGaming-SunBurn-Pro</AssemblyName><GenerateAssemblyInfo>false</GenerateAssemblyInfo><OutputType>Library</OutputType><LangVersion>preview</LangVersion><AllowUnsafeBlocks>true</AllowUnsafeBlocks><Nullable>disable</Nullable><ImplicitUsings>disable</ImplicitUsings><EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems><EnableXnaDllRedirect>false</EnableXnaDllRedirect></PropertyGroup>
+<ItemGroup><Compile Remove="System\STAThreadAttribute.cs;System\SerializableAttribute.cs" /><ProjectReference Include="C:\source\Indie-Games-Core\FNA\FNA.csproj"/><ProjectReference Include="C:\source\Indie-Games-Core\FNA.NetStub\FNA.NetStub.csproj"/><EmbeddedResource Include="Microsoft.Xna.Framework.RuntimeProfile" LogicalName="Microsoft.Xna.Framework.RuntimeProfile"/><EmbeddedResource Include="SunBurn.Effects.resources" LogicalName="SynapseGaming.LightingSystem.Effects.Resources-Xbox360.resources" /></ItemGroup>
+</Project>
+
+

@@ -14,3 +14,6 @@
 [submodule "FNA.Steamworks"]
 	path = FNA.Steamworks
 	url = https://github.com/mortlockpaul-arch/FNA.Steamworks.git
+[submodule "DigitalRune"]
+	path = DigitalRune
+	url = https://github.com/mortlockpaul-arch/DigitalRune.git

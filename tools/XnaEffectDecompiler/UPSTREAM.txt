@@ -1,0 +1,3 @@
+https://github.com/AndresTraks/HlslDecompiler
+Revision db004b9094e9d7ef1564ad1815e738d2273b2325
+Local adaptations: big-endian Xbox effect reader; probed Xbox effect states; virtual scratch constant for HLSL recovery.

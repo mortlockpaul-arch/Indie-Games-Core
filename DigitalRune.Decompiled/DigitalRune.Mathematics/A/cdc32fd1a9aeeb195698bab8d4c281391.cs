@@ -1,0 +1,54 @@
+using System;
+using System.Reflection;
+
+namespace A;
+
+internal class cdc32fd1a9aeeb195698bab8d4c281391
+{
+	internal static void c77fb13d4e20e61c5b8c64ccfd3286846()
+	{
+		bool flag = false;
+		try
+		{
+			string text = c954b1274c7b3adca7c38979452b2881a.c9172a3c82181eb071d606cdbf4b22a9f(11190);
+			if (text != null && text.Length > 0)
+			{
+				byte[] array = Convert.FromBase64String(text);
+				if (array != null)
+				{
+					AssemblyName assemblyName = new AssemblyName(Assembly.GetExecutingAssembly().FullName);
+					byte[] publicKeyToken = assemblyName.GetPublicKeyToken();
+					for (int i = 0; i < array.Length; i++)
+					{
+						if (array[i] != publicKeyToken[i])
+						{
+							throw new Exception();
+						}
+					}
+					flag = true;
+				}
+			}
+		}
+		catch
+		{
+		}
+		if (flag)
+		{
+			return;
+		}
+		while (true)
+		{
+			switch (7)
+			{
+			case 0:
+				continue;
+			}
+			if (1 == 0)
+			{
+				__ldtoken(cdc32fd1a9aeeb195698bab8d4c281391.c77fb13d4e20e61c5b8c64ccfd3286846());
+			}
+			string message = c954b1274c7b3adca7c38979452b2881a.c9172a3c82181eb071d606cdbf4b22a9f(11215) + Assembly.GetExecutingAssembly().GetName().Name + c954b1274c7b3adca7c38979452b2881a.c9172a3c82181eb071d606cdbf4b22a9f(11298);
+			throw new Exception(message);
+		}
+	}
+}
