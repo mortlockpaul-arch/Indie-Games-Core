@@ -78,6 +78,7 @@ public partial class TorrentWindow : Window
     public TorrentWindow(string archiveRoot, string? selectedFolder = null, string? stateDirectory = null, string? gamesRoot = null, string? gameFolder = null, ProjectTorrentService? service = null, GlobalCatalogue? globalCatalogue = null)
     {
         InitializeComponent();
+        WindowAppearance.SizeToWorkArea(this);
         Title=AppVersion.WindowTitle(Title);
         ArchiveBox.Text = archiveRoot;
         GamesBox.Text = gamesRoot ?? LibraryStorage.Load().Games;

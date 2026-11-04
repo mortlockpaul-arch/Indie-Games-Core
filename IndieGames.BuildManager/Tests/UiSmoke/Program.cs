@@ -113,6 +113,9 @@ internal static class Program
             Console.WriteLine("PASS WPF source dropdown, automatic output/preview, rapid selection changes, all package types and editor reuse");
 
             } var main=new MainWindow { WindowState=WindowState.Normal };
+            var workArea=SystemParameters.WorkArea;
+            if(Math.Abs(main.Width-Math.Clamp(workArea.Width*.8,main.MinWidth,workArea.Width))>1 || Math.Abs(main.Height-Math.Clamp(workArea.Height*.8,main.MinHeight,workArea.Height))>1)
+                throw new Exception("Startup window is not sized to 80% of the desktop work area");
             ((TextBox)main.FindName("RootBox")).Text=root;
             main.Show();
             var frame=new DispatcherFrame(); Exception? scanFailure=null; DateTime scanDeadline=DateTime.UtcNow.AddSeconds(20);
@@ -146,7 +149,16 @@ internal static class Program
                 var info=(TextBox)main.FindName("SelectedGameFolderBox");
                 if(info.TransformToAncestor(main).Transform(new Point()).Y < projectsGrid.TransformToAncestor(main).Transform(new Point(0,projectsGrid.ActualHeight)).Y)
                     throw new Exception("Game info is not below the grid");
-                if(projectsGrid.ActualHeight<60)throw new Exception("Project grid has no usable height");
+                if(projectsGrid.ActualHeight<60)throw new Exception("Project grid has no usable height: "+projectsGrid.ActualHeight+" at "+size+" games="+((FrameworkElement)main.FindName("GamesRegion")).ActualHeight+" controls="+((FrameworkElement)main.FindName("BuildRepairTabs")).ActualHeight+" output="+((FrameworkElement)main.FindName("OutputRegion")).ActualHeight);
+                var controls=(TabControl)main.FindName("BuildRepairTabs");
+                var output=(FrameworkElement)main.FindName("OutputRegion");
+                if(controls.TransformToAncestor(main).Transform(new Point()).Y < ((FrameworkElement)main.FindName("GamesRegion")).TransformToAncestor(main).Transform(new Point(0,((FrameworkElement)main.FindName("GamesRegion")).ActualHeight)).Y)
+                    throw new Exception("Build and repair controls are not below the games");
+                if(output.TransformToAncestor(main).Transform(new Point()).Y < controls.TransformToAncestor(main).Transform(new Point(0,controls.ActualHeight)).Y)
+                    throw new Exception("Build output/torrents are not below the controls");
+                controls.SelectedIndex=1;main.UpdateLayout();
+                if(projectsGrid.ActualHeight<60)throw new Exception("Repairs tab leaves no usable game list");
+                controls.SelectedIndex=0;main.UpdateLayout();
             }
             projectsGrid.UnselectAll();
             if(((Button)main.FindName("OpenSelectedFolderButton")).IsEnabled || ((TextBlock)main.FindName("SelectedGameName")).Text!="No game selected")

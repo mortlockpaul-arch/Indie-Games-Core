@@ -7,6 +7,16 @@ namespace IndieGames.BuildManager.Services;
 
 public static class WindowAppearance
 {
+    public static void SizeToWorkArea(Window window)
+    {
+        Rect area=SystemParameters.WorkArea;
+        window.MinWidth=Math.Min(window.MinWidth,area.Width);
+        window.MinHeight=Math.Min(window.MinHeight,area.Height);
+        window.Width=Math.Clamp(area.Width * 0.8,window.MinWidth,area.Width);
+        window.Height=Math.Clamp(area.Height * 0.8,window.MinHeight,area.Height);
+        window.WindowStartupLocation=WindowStartupLocation.CenterScreen;
+    }
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
 
