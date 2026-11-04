@@ -5,6 +5,7 @@ public sealed class GameProject : INotifyPropertyChanged
 {
     public string Name { get; init; } = "";
     public string Path { get; init; } = "";
+    public string IconPath { get; init; } = "";
     public string TargetFramework { get; init; } = "";
     private string _platformTarget = "", _platforms = "", _runtimeIdentifier = "";
     public string PlatformTarget { get => _platformTarget; set { _platformTarget = value; PropertyChanged?.Invoke(this, new(nameof(PlatformTarget))); } }
@@ -13,6 +14,8 @@ public sealed class GameProject : INotifyPropertyChanged
     public string OutputType { get; init; } = "";
     private string _buildArchitecture = "";
     public string BuildArchitecture { get => _buildArchitecture; set { _buildArchitecture = value; PropertyChanged?.Invoke(this, new(nameof(BuildArchitecture))); } }
+    private bool _isInSolution;
+    public bool IsInSolution { get => _isInSolution; set { if (_isInSolution == value) return; _isInSolution=value; PropertyChanged?.Invoke(this,new(nameof(IsInSolution))); } }
     private string _status = "Not built";
     public string Status { get => _status; set { _status = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); } }
     public event PropertyChangedEventHandler? PropertyChanged;

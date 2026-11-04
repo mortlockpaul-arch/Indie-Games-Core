@@ -122,3 +122,14 @@ Tests:
 - `dotnet run --project Tests/KnownShadersGpu/KnownShadersGpu.csproj -- <game-Content-folder> <preview.png>`: offscreen FNA/Vulkan tests for all four effects. Requires a built FNA.Core and matching native libraries; the default renderer source root is the local Snooker LIVE port and can be overridden with the `RoundLineSourceRoot` MSBuild property.
 
 Shader implementations are desktop reconstructions of the original contracts, not recovered Xbox HLSL. Full gameplay and other shader fingerprints are outside these component tests.
+## Portable build and deployment
+
+Build Manager includes its PowerShell scripts and embedded build help in this repository. No separate Python frontend checkout is required to build it. To deliberately use another script checkout, pass `-p:SharedScriptsDirectory=<folder>`.
+
+Publish a self-contained Windows x64 build:
+
+```powershell
+dotnet publish IndieGames.BuildManager/IndieGames.BuildManager.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/build-manager
+```
+
+Deploy the complete publish folder to the Python frontend's `src/assets/tools/build_manager` folder. The manager itself includes the .NET runtime; building game projects still requires their SDKs and targeting packs. Close Build Manager before replacing the deployed files.

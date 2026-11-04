@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup Condition="'$(MonoGameVariant)' != ''"><BaseIntermediateOutputPath>obj\$(MonoGameVariant)\</BaseIntermediateOutputPath><BaseOutputPath>bin\$(MonoGameVariant)\</BaseOutputPath></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk"/>
+  <PropertyGroup><TargetFramework>net9.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems><MonoGamePackage Condition="'$(MonoGamePackage)' == ''">MonoGame.Framework.DesktopGL</MonoGamePackage><MonoGamePackageVersion Condition="'$(MonoGamePackageVersion)' == ''">3.8.1.303</MonoGamePackageVersion></PropertyGroup>
+  <ItemGroup Condition="'$(MonoGameAssembly)' == '' and '$(MonoGameProject)' == ''"><PackageReference Include="$(MonoGamePackage)" Version="$(MonoGamePackageVersion)"/></ItemGroup>
+  <ItemGroup Condition="'$(MonoGameProject)' != ''"><ProjectReference Include="$(MonoGameProject)"/></ItemGroup>
+  <ItemGroup Condition="'$(MonoGameAssembly)' != ''"><Reference Include="MonoGame.Framework"><HintPath>$(MonoGameAssembly)</HintPath></Reference></ItemGroup>
+  <ItemGroup><Compile Include="..\Shared\GameSettingsOverlay.cs" Link="GameSettingsOverlay.cs"/><Compile Include="..\Shared\OverlayDiagnostics.cs" Link="OverlayDiagnostics.cs"/></ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk"/>
+</Project>

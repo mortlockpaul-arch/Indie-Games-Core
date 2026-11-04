@@ -10,16 +10,36 @@ string project=Path.Combine(root,"Demo Indie Project");Directory.CreateDirectory
 File.WriteAllText(Path.Combine(project,"Demo.csproj"),"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
 File.WriteAllText(Path.Combine(project,"Program.cs"),"// synthetic test source");
 byte[] content=new byte[2*1024*1024];RandomNumberGenerator.Fill(content);File.WriteAllBytes(Path.Combine(project,"Content","test.bin"),content);
-foreach(string folder in new[]{"bin","obj","logs","texture-conversion","584E07D1"}){Directory.CreateDirectory(Path.Combine(project,folder));File.WriteAllText(Path.Combine(project,folder,"excluded.txt"),"excluded");}
+foreach(string folder in new[]{"bin","obj","logs","texture-conversion","shader-repair-backups","font-repair-backups","video-conversion","584E07D1"}){Directory.CreateDirectory(Path.Combine(project,folder));File.WriteAllText(Path.Combine(project,folder,"excluded.txt"),"excluded");}
 File.WriteAllText(Path.Combine(project,"Program.cs.before-fix.bak"),"excluded");File.WriteAllText(Path.Combine(project,".env"),"excluded");
 var plan=ProjectBundle.Preview(project);if(plan.Files.Count!=3)throw new Exception("Bad preview exclusion count "+plan.Files.Count);
 int Port(){var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int port=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();return port;}
 EngineSettings Settings(string name,int port)=>new EngineSettingsBuilder{CacheDirectory=Path.Combine(root,name,"cache"),DhtEndPoint=null,AllowLocalPeerDiscovery=false,AllowPortForwarding=false,AutoSaveLoadDhtCache=false,AutoSaveLoadFastResume=true,MaximumUploadRate=512*1024,ListenEndPoints=new(){["ipv4"]=new IPEndPoint(IPAddress.Loopback,port)}}.ToSettings();
 int seedPort=Port();await using var seed=new ProjectTorrentService(Path.Combine(root,"seed"),Settings("seed",seedPort));
 using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(55));var token=timeout.Token;
-var entry=await seed.CreateShareAsync(plan,Array.Empty<string>(),token);
+string icon="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD34AAAAASUVORK5CYII=";
+var entry=await seed.CreateShareAsync(plan,Array.Empty<string>(),token,icon);
+File.SetLastWriteTimeUtc(Path.Combine(project,"Program.cs"),DateTime.UtcNow.AddMinutes(1));
+var reused=await seed.CreateShareAsync(plan,[],token);
+if(reused.Id!=entry.Id || reused.InfoHash!=entry.InfoHash || Directory.GetDirectories(Path.Combine(seed.StateDirectory,"shares")).Length!=1)throw new Exception("Unchanged source must reuse its snapshot without orphan packages.");
+await new TorrentCatalogue{Projects=[entry with{ContentSha256=""}]}.SaveAsync(seed.LocalCataloguePath,token);
+var legacyReuse=await seed.CreateShareAsync(plan,[],token);
+if(legacyReuse.Id!=entry.Id || legacyReuse.ContentSha256.Length!=64)throw new Exception("Legacy snapshots must be compared by unpacked content.");
+var inspected=await seed.InspectContentsAsync(entry,token);
+if(inspected.Files.Count!=3 || inspected.Fingerprint!=reused.ContentSha256)throw new Exception("Snapshot inspection mismatch.");
+Console.WriteLine("PASS unchanged and legacy snapshot reuse, metadata-independent content hashes, inspection and cleanup");
 string cataloguePath=Path.Combine(root,"catalogue.json");await new TorrentCatalogue{Projects=[entry]}.SaveAsync(cataloguePath,token);
-var catalogue=await TorrentCatalogue.LoadAsync(cataloguePath,token);if(catalogue.Projects.Count!=1)throw new Exception("Catalogue round trip failed");
+var catalogue=await TorrentCatalogue.LoadAsync(cataloguePath,token);if(catalogue.Projects.Count!=1 || catalogue.Projects[0].IconBase64!=icon)throw new Exception("Catalogue artwork round trip failed");
+foreach(string badIcon in new[]{"not base64",Convert.ToBase64String(new byte[70]),new string('A',65540)}) {
+    try{TorrentCatalogue.ValidateIcon(badIcon);throw new Exception("Invalid artwork accepted");}catch(InvalidDataException){}
+}
+byte[] hugeIcon=Convert.FromBase64String(icon);System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(hugeIcon.AsSpan(16,4),5000);
+try{TorrentCatalogue.ValidateIcon(Convert.ToBase64String(hugeIcon));throw new Exception("Oversized icon dimensions accepted");}catch(InvalidDataException){}
+var legacyJson=System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(cataloguePath,token))!;
+legacyJson["Projects"]![0]!.AsObject().Remove("IconBase64");
+string legacyPath=Path.Combine(root,"legacy-catalogue.json");await File.WriteAllTextAsync(legacyPath,legacyJson.ToJsonString(),token);
+if((await TorrentCatalogue.LoadAsync(legacyPath,token)).Projects[0].IconBase64!="")throw new Exception("Legacy catalogue compatibility failed");
+Console.WriteLine("PASS portable artwork, invalid icon bounds and legacy catalogue compatibility");
 var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int httpPort=((IPEndPoint)listener.LocalEndpoint).Port;
 var serve=Task.Run(async()=>{using var client=await listener.AcceptTcpClientAsync(token);await using var stream=client.GetStream();using var requestReader=new StreamReader(stream,System.Text.Encoding.ASCII,false,1024,true);while(await requestReader.ReadLineAsync(token) is {Length:>0} line){if(line.Length>8192)throw new InvalidDataException("Oversized HTTP request");}byte[] body=File.ReadAllBytes(cataloguePath);byte[] header=System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");await stream.WriteAsync(header,token);await stream.WriteAsync(body,token);});
 var remoteCatalogue=await TorrentCatalogue.LoadAsync($"http://127.0.0.1:{httpPort}/catalogue.json",token);await serve;listener.Stop();
@@ -58,10 +78,10 @@ Console.WriteLine("PASS verified install, existing-folder protection, bad checks
 string game=Path.Combine(root,"Demo playable game");Directory.CreateDirectory(Path.Combine(game,"Content"));
 foreach(string name in new[]{"Demo.exe","Demo.dll","Demo.deps.json","Demo.runtimeconfig.json","FAudio.dll","Demo.pdb","Demo.cs"})File.WriteAllText(Path.Combine(game,name),"synthetic fixture");
 File.WriteAllBytes(Path.Combine(game,"Content","sprite.bin"),content[..1024]);
-var gamePlan=ProjectBundle.Preview(game,packageKind:"Game");
+var gamePlan=ProjectBundle.Preview(game,packageKind:"Game") with { Name="Demo Game (Shared)" };
 if(gamePlan.Files.Any(f=>f.RelativePath.EndsWith(".pdb")||f.RelativePath.EndsWith(".cs")))throw new Exception("Game package included development files");
 var gameEntry=await seed.CreateShareAsync(gamePlan,[],token);
-if(gameEntry.PackageKind!="Game")throw new Exception("Game kind lost");
+if(gameEntry.PackageKind!="Game" || gameEntry.FolderName!="Demo Game (Shared)")throw new Exception("Game kind or stable install-folder name lost");
 var both=await TorrentCatalogue.LoadAsync(seed.LocalCataloguePath,token);
 if(both.Projects.Count!=2 || both.Projects.Select(p=>p.PackageKind).Distinct().Count()!=2)throw new Exception("Source and game are not separate catalogue packages");
 var gameSeed=await seed.StartAsync(gameEntry,true,token);
@@ -91,6 +111,7 @@ try{StorageCleanup.Delete(new CleanupFolder(project,game,0));throw new Exception
 try{new LibraryStorage {Archive=project,Games=Path.Combine(project,"games"),BuildCache=storage.BuildCache,TorrentCache=storage.TorrentCache}.Validate();throw new Exception("Nested storage roots accepted");}catch(IOException){}
 if(LibraryStorage.ProjectKey(Path.Combine(root,"one","Demo.csproj"))==LibraryStorage.ProjectKey(Path.Combine(root,"two","Demo.csproj")))throw new Exception("Project identities collide");
 Console.WriteLine("PASS cleanup boundaries, unrelated-file preservation, legacy bin/obj preview and unique project identities");
+File.WriteAllText(Path.Combine(project,"Program.cs"),new string('x',checked((int)new FileInfo(Path.Combine(project,"Program.cs")).Length)));
 var duplicate=await seed.CreateShareAsync(plan,[],token);
 if(duplicate.Name!=entry.Name || duplicate.InfoHash==entry.InfoHash)throw new Exception("Duplicate fixture must share a name but have a distinct torrent identity");
 string originalPackage=sharing.PackagePath;

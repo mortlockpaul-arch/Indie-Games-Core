@@ -15,10 +15,14 @@ public sealed record TorrentProject
     public long UnpackedBytes { get; init; }
     public int FileCount { get; init; }
     public string Sha256 { get; init; } = "";
+    public string ContentSha256 { get; init; } = "";
     public string InfoHash { get; init; } = "";
     public string TorrentBase64 { get; init; } = "";
+    public string IconBase64 { get; init; } = "";
     public DateTimeOffset CreatedUtc { get; init; }
     public string SizeDisplay => $"{PackageBytes / 1048576.0:N1} MB";
+    public string SnapshotDisplay => InfoHash.Length >= 10 ? InfoHash[..10] : InfoHash;
+    public string CreatedDisplay => CreatedUtc == default ? "Unknown" : CreatedUtc.ToLocalTime().ToString("dd MMM HH:mm");
 }
 
 public sealed class TorrentCatalogue
@@ -81,6 +85,9 @@ public sealed class TorrentCatalogue
     {
         if (project == null || project.PackageKind is not ("Source" or "Game") || !Guid.TryParseExact(project.Id, "N", out _) || string.IsNullOrWhiteSpace(project.Name) || project.Name.Length > 200)
             throw new InvalidDataException("Invalid project identity.");
+        ValidateIcon(project.IconBase64);
+        if (!string.IsNullOrEmpty(project.ContentSha256) && (project.ContentSha256.Length != 64 || !project.ContentSha256.All(Uri.IsHexDigit)))
+            throw new InvalidDataException("Invalid snapshot content hash.");
         ProjectBundle.ValidateSegment(project.FolderName);
         if (project.FolderName.StartsWith('.')) throw new InvalidDataException("Project folder cannot start with a dot.");
         if (project.PackageName != project.Id + ".zip" || project.PackageBytes <= 0 || project.PackageBytes > 101L * 1024 * 1024 * 1024 || project.UnpackedBytes < 0 ||
@@ -94,5 +101,21 @@ public sealed class TorrentCatalogue
             torrent.Size != project.PackageBytes || !string.Equals(torrent.InfoHashes.V1?.ToHex(), project.InfoHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Torrent metadata does not match the catalogue entry.");
         return torrent;
+    }
+
+    public static void ValidateIcon(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return; // Older catalogues have no artwork.
+        if (icon.Length > 65536) throw new InvalidDataException("Catalogue icon is too large.");
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(icon); }
+        catch (FormatException ex) { throw new InvalidDataException("Invalid catalogue icon.", ex); }
+        byte[] signature = [137,80,78,71,13,10,26,10];
+        if (bytes.Length < 33 || !bytes.AsSpan(0,8).SequenceEqual(signature) ||
+            System.Text.Encoding.ASCII.GetString(bytes,12,4) != "IHDR")
+            throw new InvalidDataException("Catalogue artwork must be a PNG image.");
+        uint width = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(16,4));
+        uint height = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(20,4));
+        if (width is 0 or > 128 || height is 0 or > 128) throw new InvalidDataException("Catalogue artwork exceeds 128 pixels.");
     }
 }

@@ -2,6 +2,9 @@ using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
+using System.Collections.Concurrent;
+using System.Text;
+using System.Windows.Threading;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection.Metadata;
@@ -22,13 +25,26 @@ public partial class MainWindow : Window
     private readonly LibraryStorage _storage = LibraryStorage.Load();
     private bool _torrentShutdown;
     private bool _architectureReady, _updatingArchitecture;
+    private readonly ConcurrentQueue<string> _pendingLog = new();
+    private readonly DispatcherTimer _logTimer;
+    private readonly DispatcherTimer _membershipTimer;
+    private string? _membershipStamp, _membershipError;
+    private bool _checkingMembership, _membershipPending;
     public MainWindow()
     {
         InitializeComponent();
+        _logTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(75) };
+        _logTimer.Tick += (_, _) => FlushLog();
+        _logTimer.Start();
+        _membershipTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval=TimeSpan.FromSeconds(2) };
+        _membershipTimer.Tick += async (_,_) => await RefreshSolutionMembershipAsync();
+        _membershipTimer.Start();
+        Closed += (_, _) => { _logTimer.Stop(); _membershipTimer.Stop(); };
         _architectureReady = true;
         Title=AppVersion.WindowTitle(Title);
         Closing += MainWindow_Closing;
         RootBox.Text = _storage.Archive;
+        UpdateSolutionLabel();
         ProjectsGrid.ItemsSource = _projects;
         AudioFfmpegBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
         WaveBankDecoderBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "vgmstream", "vgmstream-cli.exe");
@@ -67,7 +83,16 @@ public static void ScanXnaReferences(string folder)
         }
     }
 }
-private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(line + Environment.NewLine); LogBox.ScrollToEnd(); });
+    private void Log(string line) => _pendingLog.Enqueue(line);
+    private void FlushLog()
+    {
+        var text = new StringBuilder();
+        for (int count = 0; count < 200 && text.Length < 32768 && _pendingLog.TryDequeue(out string? line); count++)
+            text.AppendLine(line);
+        if (text.Length == 0) return;
+        LogBox.AppendText(text.ToString());
+        LogBox.ScrollToEnd();
+    }
     private async void Scan()
     {
         _scanCts?.Cancel();
@@ -88,6 +113,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
             var projects=await Task.Run(()=>ProjectScanner.Scan(root,scan.Token,progress));
             if (_scanCts != scan || scan.IsCancellationRequested) return;
             foreach (var project in projects) _projects.Add(project);
+            await RefreshSolutionMembershipAsync(true);
             FolderScanProgress.IsIndeterminate=false; FolderScanProgress.Value=FolderScanProgress.Maximum;
             FolderScanStatus.Text=$"Scan Complete · {_projects.Count:N0} Projects"; Log($"Found {_projects.Count} projects.");
         }
@@ -98,50 +124,18 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
     private void CancelScan_Click(object sender, RoutedEventArgs e) => _scanCts?.Cancel();
     private void Scan_Click(object sender, RoutedEventArgs e) => Scan();
 
-    private async void InstallGameLoggerButton_Click( object sender, RoutedEventArgs e)
+    private async void InstallGameLoggerButton_Click(object sender, RoutedEventArgs e)
     {
-        string script = Path.Combine(
-            AppContext.BaseDirectory,
-            "scripts",
-            "Install-GameLogger.ps1"
-        );
-        // C:\PycharmProjects\xenia-game-manager\src\scripts\Install-GameLogger.ps1
-        if (!File.Exists(script))
-        {
-            MessageBox.Show($"Script not found:\n{script}");
-            return;
-        }
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "powershell.exe",
-            Arguments =
-                $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" " +
-                "-Root \"C:\\source\\Indie-Games\"",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        using var process = new Process { StartInfo = startInfo };
-
-        process.Start();
-
-        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
-        Task<string> errorTask = process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        string output = await outputTask;
-        string errors = await errorTask;
-
-        MessageBox.Show(
-            output + Environment.NewLine + errors,
-            process.ExitCode == 0
-                ? "GameLogger Installed"
-                : "GameLogger Installation Failed"
-        );
+        string script=_storage.ScriptPath("Install-GameLogger.ps1");
+        if(!File.Exists(script)) { Log("Script not found: "+script); return; }
+        string core=Path.GetDirectoryName(Path.GetFullPath(_storage.Solution))!;
+        string archive=RootBox.Text.Trim();
+        await ExecuteAsync(async token => {
+            int code=await ProcessRunner.RunAsync("powershell.exe",
+                ["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",script,"-Root",core,"-Archive",archive],
+                core,Log,token);
+            Log(code==0 ? "Game logger installed. Rebuild games to include direct-launch console capture." : $"Game logger installation failed ({code}).");
+        });
     }
 
     private void ProjectCleanup_Click(object sender, RoutedEventArgs e)
@@ -157,9 +151,17 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         if (_cts != null || _torrentWindow != null) { Log("Finish builds and close torrent sharing before changing storage folders."); return; }
         _storage.Archive = RootBox.Text.Trim();
         var window = new StorageWindow(_storage) { Owner = this };
-        if (window.ShowDialog() == true) { RootBox.Text = _storage.Archive; Scan(); }
+        if (window.ShowDialog() == true) { RootBox.Text = _storage.Archive; UpdateSolutionLabel(); Scan(); }
     }
 
+    private PortableGamesWindow? _playableGames;
+    private void PlayableGames_Click(object sender, RoutedEventArgs e)
+    {
+        if (_playableGames != null) { _playableGames.Activate(); return; }
+        _playableGames = new PortableGamesWindow(_storage, selection => OpenTorrentManager().OpenShare(1, selection), Log) { Owner=this };
+        _playableGames.Closed += (_,_) => _playableGames=null;
+        _playableGames.Show();
+    }
     private void TorrentCatalogue_Click(object sender, RoutedEventArgs e)
     {
         OpenTorrentManager();
@@ -174,7 +176,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         if (folder != null && folder.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             folder = Path.Combine(root, Path.GetRelativePath(root, folder).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0]);
         _storage.Archive = root;
-        _torrentWindow = new TorrentWindow(root, folder, _storage.TorrentCache, _storage.Games, Selected().FirstOrDefault() is { } chosen ? _storage.GameFolder(chosen.Path) : null) { Owner = this };
+        _torrentWindow = new TorrentWindow(root, folder, _storage.TorrentCache, _storage.Games, Selected().FirstOrDefault() is { } chosen ? _storage.GameFolder(chosen.Path) : null, (Application.Current as App)?.Torrents) { Owner = this };
         _torrentWindow.ProjectInstalled += archive => { RootBox.Text = archive; Scan(); };
         _torrentWindow.StatusChanged += UpdateTorrentStatus;
         _torrentWindow.Closed += (_, _) => { _torrentWindow = null; StopTorrentsButton.IsEnabled=false; };
@@ -193,6 +195,11 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
     private void ViewTorrents_Click(object sender, RoutedEventArgs e) => OutputTabs.SelectedIndex=1;
     private async void StopTorrents_Click(object sender, RoutedEventArgs e)
     {
+        if(Application.Current is App {BackgroundSeeding:true} app)
+        {
+            StopTorrentsButton.IsEnabled=false;
+            await app.StopBackgroundSeedingAsync();
+        }
         if (_torrentWindow == null) return;
         StopTorrentsButton.IsEnabled=false;
         await _torrentWindow.ShutdownAsync();
@@ -215,6 +222,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
 
     private async void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if(Application.Current is App {BackgroundSeeding:true}) {e.Cancel=true;Hide();return;}
         _scanCts?.Cancel();
         if (_torrentWindow == null) return;
         e.Cancel = true;
@@ -314,12 +322,8 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
             string executable = executables[0].Path;
             Log($"=== Running {project.Name} ===");
             Log($"Executable: {executable}");
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = executable,
-                WorkingDirectory = Path.GetDirectoryName(executable)!,
-                UseShellExecute = false
-            });
+            OutputTabs.SelectedIndex=0;
+            GameProcessLauncher.Start(executable,GameProcessLauncher.DefaultLogDirectory,Log);
         }
         catch (Exception ex)
         {
@@ -511,6 +515,39 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         }
     }
 
+    private async void RepairWindowTitle_Click(object sender, RoutedEventArgs e)
+    {
+        var selected=Selected();
+        if(selected.Count==0) { Log("Select game rows first."); return; }
+        await ExecuteAsync(async token => {
+            foreach(var project in selected)
+            {
+                token.ThrowIfCancellationRequested();
+                Log(project.Name+": "+await Task.Run(()=>GameTitleRepair.Apply(project.Path),token));
+            }
+        });
+    }
+
+    private void XnaRepairHelp_Click(object sender, RoutedEventArgs e) => SharingHelpWindow.ShowXnaHelp(this);
+    private async void InstallOverlay_Click(object sender, RoutedEventArgs e)
+    {
+        var selected=Selected();if(selected.Count==0){Log("Select one or more game rows first.");return;}
+        string core=Path.GetDirectoryName(Path.GetFullPath(_storage.Solution))!;
+        await ExecuteAsync(async token=>{
+            foreach(var game in selected){token.ThrowIfCancellationRequested();try{var result=await Task.Run(()=>GameOverlayInstaller.Install(game.Path,core,token),token);Log($"{game.Name}: {result.Status} — {result.Message}");if(result.Backup!=null)Log("Overlay backup: "+result.Backup);}catch(OperationCanceledException){throw;}catch(Exception ex){Log($"{game.Name}: overlay installation failed — {ex.GetBaseException().Message}");}}
+        });
+    }
+    private void ConvertXnaBinary_Click(object sender, RoutedEventArgs e) => new XnaConversionWindow(_storage) { Owner=this }.ShowDialog();
+    private void OpenGameLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string folder=GameProcessLauncher.DefaultLogDirectory; Directory.CreateDirectory(folder);
+            Process.Start(new ProcessStartInfo(folder) { UseShellExecute=true });
+        }
+        catch(Exception ex) { Log("Could not open game logs: "+ex.Message); }
+    }
+
     private void ProjectsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (GameSelectionCount == null) return;
@@ -520,6 +557,8 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         GameSelectionCount.Text = selected.Count == 0 ? "Select games to build or repair" :
             $"{selected.Count} game{(selected.Count == 1 ? "" : "s")} selected";
         OpenSelectedFolderButton.IsEnabled = project != null;
+        AddToSolutionButton.IsEnabled = selected.Count > 0;
+        RemoveFromSolutionButton.IsEnabled = selected.Count > 0;
         SelectedGameName.Text = project?.Name ?? "No game selected";
         SelectedGameFolderBox.Text = project == null ? "Select a row to see its folder" :
             Path.GetDirectoryName(Path.GetFullPath(project.Path))!;
@@ -538,6 +577,60 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         if (!Directory.Exists(folder)) { Log($"Folder not found: {folder}"); return; }
         try { Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
         catch (Exception ex) { Log($"Could not open folder: {ex.Message}"); }
+    }
+
+    private void UpdateSolutionLabel()
+    {
+        SelectedSolutionName.Text = string.IsNullOrWhiteSpace(_storage.Solution) ? "Set solution in settings" : Path.GetFileName(_storage.Solution) + " · green rows are in the solution";
+        SelectedSolutionName.ToolTip = _storage.Solution;
+        EffectsScriptBox.Text = _storage.ScriptPath("Convert-XnbEffects.ps1");
+        ScriptBox.Text = _storage.ScriptPath("fix_sdk1005.ps1");
+    }
+
+    private async void AddToSolution_Click(object sender, RoutedEventArgs e) => await UpdateSolutionAsync(true);
+    private async void RemoveFromSolution_Click(object sender, RoutedEventArgs e) => await UpdateSolutionAsync(false);
+
+    private async Task UpdateSolutionAsync(bool add)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select project rows first."); return; }
+        string solution = _storage.Solution;
+        if (string.IsNullOrWhiteSpace(solution) || !File.Exists(solution)) {
+            Log($"Configured solution not found: {solution}. Update the solution path in Settings.");
+            return;
+        }
+        await ExecuteAsync(async token => {
+            try { await SolutionProjects.UpdateAsync(solution, selected.Select(p => p.Path), add, Log, token); await RefreshSolutionMembershipAsync(true); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { Log($"Solution update failed: {ex.Message}"); }
+        });
+    }
+
+    private async Task RefreshSolutionMembershipAsync(bool force=false)
+    {
+        if (_checkingMembership) { _membershipPending |= force; return; }
+        _checkingMembership=true;
+        string solution=_storage.Solution, previous=_membershipStamp ?? "";
+        try
+        {
+            var snapshot=await Task.Run(() => {
+                var info=new FileInfo(solution);
+                string stamp=solution + "|" + (info.Exists ? info.LastWriteTimeUtc.Ticks + ":" + info.Length : "missing");
+                return !force && stamp==previous ? null : new { Stamp=stamp, Members=SolutionMembership.Read(solution) };
+            });
+            if (snapshot == null || solution != _storage.Solution || Dispatcher.HasShutdownStarted) return;
+            foreach (var project in _projects) project.IsInSolution=snapshot.Members.Contains(Path.GetFullPath(project.Path));
+            _membershipStamp=snapshot.Stamp; _membershipError=null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Xml.XmlException)
+        {
+            if (_membershipError!=ex.Message) { Log("Could not refresh solution membership: " + ex.Message); _membershipError=ex.Message; }
+        }
+        finally
+        {
+            _checkingMembership=false;
+            if (_membershipPending) { _membershipPending=false; _=RefreshSolutionMembershipAsync(true); }
+        }
     }
 
     private async void BatchXnaFixes_Click(object sender, RoutedEventArgs e)
@@ -563,7 +656,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
             MessageBox.Show(this, "Select one or more game rows first.", "Batch repairs");
             return;
         }
-        string script = @"C:\PycharmProjects\xenia-game-manager\src\scripts\XnaRepairFunctions.ps1";
+        string script = _storage.ScriptPath("XnaRepairFunctions.ps1");
 
         var dialog = new Window {
             Title = "Source and SDK repairs", Width = 820, Height = 600,
@@ -660,7 +753,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         bool sdkDoRestore = sdkRestore.IsChecked == true;
         bool sdkDoClean = sdkClean.IsChecked == true;
         bool sdkFixRids = sdkRids.IsChecked == true;
-        string sdkScript = Path.Combine(AppContext.BaseDirectory, "scripts", "BuildSdkRepairs.ps1");
+        string sdkScript = _storage.ScriptPath("BuildSdkRepairs.ps1");
         if (selectedSdkFixers.Length > 0 && !File.Exists(sdkScript)) {
             var chooser = new OpenFileDialog { Title = "Choose BuildSdkRepairs.ps1",
                 Filter = "PowerShell (*.ps1)|*.ps1" };
@@ -767,6 +860,37 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
     private async void ConvertXnbFonts_Click(object sender, RoutedEventArgs e)
         => await ConvertGraphicsContentAsync(textures: false);
 
+    private async void ShaderDemos_Click(object sender, RoutedEventArgs e)
+    {
+        try { await ShaderDemoLauncher.OpenAsync(Log); }
+        catch (Exception error) { Log("Shader demo browser: " + error.Message); }
+    }
+
+    private async void ConvertVideos_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string ffmpeg = AudioFfmpegBox.Text.Trim();
+        if (!File.Exists(ffmpeg)) { Log("FFmpeg not found: " + ffmpeg); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        await ExecuteAsync(async token =>
+        {
+            foreach (string folder in folders)
+            {
+                string content = Path.Combine(folder, "Content");
+                if (!Directory.Exists(content)) { Log("SKIP: No Content folder: " + folder); continue; }
+                Log("=== Converting videos: " + Path.GetFileName(folder) + " ===");
+                var results = await VideoConverter.ConvertAsync(content, ffmpeg, Log, token);
+                Log($"Videos: {results.Count(r => r.Status == "Converted")} converted, {results.Count(r => r.Status == "Skipped")} existing OGVs preserved, {results.Count(r => r.Status == "Failed")} failed. Rebuild to copy content to bin; restart the game to reload it.");
+            }
+        });
+    }
+
     private async void ConvertXnbTextures_Click(object sender, RoutedEventArgs e)
         => await ConvertGraphicsContentAsync(textures: true);
 
@@ -807,7 +931,7 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
     {
         var selected = Selected();
         if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
-        string script = Path.Combine(AppContext.BaseDirectory, "scripts", "Convert-XnbAudio.ps1");
+        string script = _storage.ScriptPath("Convert-XnbAudio.ps1");
         string extractor = EffectsExtractorBox.Text.Trim();
         string ffmpeg = AudioFfmpegBox.Text.Trim();
         foreach (string path in new[] { script, extractor, ffmpeg })
@@ -953,4 +1077,3 @@ private void Log(string line) => Dispatcher.Invoke(() => { LogBox.AppendText(lin
         });
     }
 }
-

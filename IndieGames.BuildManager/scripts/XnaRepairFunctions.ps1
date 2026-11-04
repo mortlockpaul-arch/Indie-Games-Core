@@ -4,15 +4,24 @@ function Repair-XnaStorageSave {
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
     Invoke-XnaSourceFix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference -Transform {
         param($s)
+        # Preserve File.Open/Create migrations as well as constructor-based migrations.
         # Converts save paths only when the path variable is immediately used for writing.
         $pattern = '(?m)^[ \t]*(?:string|var)\s+(?<path>\w+)\s*=\s*Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<filename>[^;\r\n]+?)\s*\);[ \t]*\r?\n(?<indent>[ \t]*)(?<prefix>(?:(?:using\s+)?(?:FileStream|Stream)\s+\w+\s*=\s*|\w+\s*=\s*))File\.(?:Open|Create)\(\s*\k<path>\s*(?:,\s*FileMode\.(?:Create|CreateNew|OpenOrCreate))?\s*\)'
-        [regex]::Replace($s, $pattern, {
+        $s = [regex]::Replace($s, $pattern, {
             param($m)
             $container = $m.Groups['container'].Value
             $filename = $m.Groups['filename'].Value.Trim()
             $indent = $m.Groups['indent'].Value
-            $prefix = $m.Groups['prefix'].Value
+            $prefix = [regex]::Replace($m.Groups['prefix'].Value, '\bFileStream\b', 'Stream')
             return "${indent}${prefix}${container}.CreateFile($filename)"
+        })
+
+        $pattern = '(?m)^(?<indent>[ \t]*)(?:string|var)\s+(?<path>\w+)\s*=\s*Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<file>"[^"\r\n]+")\s*\);\s*\r?\n(?<open>[ \t]*using\s+FileStream\s+\w+\s*=\s*new\s+FileStream\(\s*\k<path>\s*,\s*FileMode\.Create\s*\);)'
+        [regex]::Replace($s, $pattern, {
+            param($m)
+            $open = [regex]::Replace($m.Groups['open'].Value, 'FileStream', 'Stream')
+            $open = [regex]::Replace($open, 'new\s+Stream\([^;]+\)', $m.Groups['container'].Value + '.CreateFile(' + $m.Groups['file'].Value + ')')
+            return $open
         })
     }
 }
@@ -102,7 +111,6 @@ function Repair-XnaStorageSelector {
     param(
         [Parameter(Mandatory)]
         [string]$Root,
-
         [switch]$NoBackup
     )
 
@@ -263,11 +271,23 @@ function Repair-XnaStorageLoad {
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
     Invoke-XnaSourceFix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference -Transform {
         param($s)
+        # Preserve File.Open/Create migrations as well as constructor-based migrations.
         # Rewrite only a declaration followed immediately by a known read operation.
         $pattern = '(?m)^[ \t]*(?:string|var)\s+(?<path>\w+)\s*=\s*Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<filename>[^;\r\n]+?)\s*\);[ \t]*\r?\n(?<indent>[ \t]*)(?<prefix>(?:(?:using\s+)?(?:FileStream|Stream)\s+\w+\s*=\s*|\w+\s*=\s*))File\.Open\(\s*\k<path>\s*,\s*FileMode\.Open\s*\)'
+        $s = [regex]::Replace($s, $pattern, {
+            param($m)
+            return $m.Groups['indent'].Value + ([regex]::Replace($m.Groups['prefix'].Value, '\bFileStream\b', 'Stream')) + $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['filename'].Value.Trim() + ', FileMode.Open)'
+        })
+
+        # Supports an if (!File.Exists(path)) { return; } between declaration
+        # and stream creation, as used by The Impossible Game.
+        $pattern = '(?ms)^(?<indent>[ \t]*)(?:string|var)\s+(?<path>\w+)\s*=\s*Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<file>"[^"\r\n]+")\s*\);[ \t]*\r?\n(?<guard>[ \t]*if\s*\(\s*!File\.Exists\(\s*\k<path>\s*\)\s*\)\s*\{\s*return\s*;\s*\}\s*)(?<open>[ \t]*using\s+FileStream\s+\w+\s*=\s*new\s+FileStream\(\s*\k<path>\s*,\s*FileMode\.Open\s*\);)'
         [regex]::Replace($s, $pattern, {
             param($m)
-            return $m.Groups['indent'].Value + $m.Groups['prefix'].Value + $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['filename'].Value.Trim() + ', FileMode.Open)'
+            $guard = [regex]::Replace($m.Groups['guard'].Value, 'File\.Exists\(\s*' + [regex]::Escape($m.Groups['path'].Value) + '\s*\)', $m.Groups['container'].Value + '.FileExists(' + $m.Groups['file'].Value + ')')
+            $open = $m.Groups['open'].Value.Replace('FileStream', 'Stream')
+            $open = [regex]::Replace($open, 'new\s+Stream\([^;]+\)', $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['file'].Value + ', FileMode.Open)')
+            return $m.Groups['indent'].Value + $guard + $open
         })
     }
 }
@@ -463,6 +483,15 @@ function Repair-XnaSpriteBatch {
         -WhatIf:$WhatIfPreference `
         -Transform {
             param($s)
+
+            # Convert single-BlendState calls, including custom batch variable names.
+            # Anchor to a statement line to avoid changing examples in line comments
+            # or ordinary strings. Already migrated calls do not match.
+            $s = [regex]::Replace(
+                $s,
+                '(?m)^(?<prefix>[ \t]*(?:(?:this|base)\s*\.\s*)?@?[A-Za-z_][A-Za-z_0-9]*\s*\.\s*Begin\s*\(\s*)(?<blend>(?:(?:global::)?Microsoft\.Xna\.Framework\.Graphics\.)?BlendState\s*\.\s*(?:AlphaBlend|Additive|Opaque|NonPremultiplied))(?<suffix>\s*\)\s*;)',
+                '${prefix}Microsoft.Xna.Framework.Graphics.SpriteSortMode.Deferred, ${blend}${suffix}'
+            )
 
             # Convert the old XNA 3.x SpriteBatch.Begin overload.
             $pattern = 'spriteBatch\.Begin\s*\(\s*SpriteBlendMode\.AlphaBlend\s*,\s*SpriteSortMode\.Immediate\s*,\s*SaveStateMode\.None\s*\)\s*;'
@@ -698,3 +727,119 @@ function Repair-XnaNativeDlls {
         Write-Host "$name installed ($installedArch)" -ForegroundColor Green
     }
 }
+
+function Get-DllArchitecture {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $resolvedPath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+
+    $stream = [System.IO.File]::OpenRead($resolvedPath)
+    $reader = [System.IO.BinaryReader]::new($stream)
+
+    try {
+        # Verify DOS header
+        if ($reader.ReadUInt16() -ne 0x5A4D) {
+            throw "Not a valid PE file: $resolvedPath"
+        }
+
+        # Read PE header offset
+        $stream.Seek(0x3C, [System.IO.SeekOrigin]::Begin) | Out-Null
+        $peOffset = $reader.ReadInt32()
+
+        # Verify PE signature
+        $stream.Seek($peOffset, [System.IO.SeekOrigin]::Begin) | Out-Null
+
+        if ($reader.ReadUInt32() -ne 0x00004550) {
+            throw "Invalid PE signature: $resolvedPath"
+        }
+
+        # Read machine architecture
+        $machine = $reader.ReadUInt16()
+
+        switch ($machine) {
+            0x014C { return "x86" }
+            0x8664 { return "x64" }
+            0xAA64 { return "ARM64" }
+            0x01C4 { return "ARM" }
+            default {
+                return "Unknown (0x{0:X4})" -f $machine
+            }
+        }
+    }
+    finally {
+        $reader.Dispose()
+        $stream.Dispose()
+    }
+}
+
+function Get-Dll-References
+{
+    param(
+        [string]$Root = 'D:\indie-game-archive\$1 Zombie Game, The (World) (XBLIG)\584E07D1'
+    )
+
+    $ErrorActionPreference = 'Stop'
+
+    Write-Host "Scanning: $Root" -ForegroundColor Cyan
+
+    if (-not (Test-Path -LiteralPath $Root))
+    {
+        throw "Folder not found: $Root"
+    }
+
+    $dlls = @(Get-ChildItem -LiteralPath $Root -Filter '*.dll' -File)
+
+    Write-Host "Found $( $dlls.Count ) DLLs" -ForegroundColor Yellow
+
+    foreach ($dll in $dlls)
+    {
+        Write-Host "`nChecking: $( $dll.Name )" -ForegroundColor Cyan
+
+        try
+        {
+            $assemblyName = [System.Reflection.AssemblyName]::GetAssemblyName(
+                    $dll.FullName
+            )
+
+            $assembly = [System.Reflection.Assembly]::LoadFrom($dll.FullName)
+
+            $references = @($assembly.GetReferencedAssemblies() |
+                    Where-Object {
+                        $_.Name -like 'Microsoft.Xna.Framework*'
+                    })
+
+            if ($references.Count -eq 0)
+            {
+                Write-Host "  No XNA references"
+                continue
+            }
+
+            foreach ($reference in $references)
+            {
+                Write-Host "  XNA: $( $reference.FullName )" -ForegroundColor Yellow
+            }
+        }
+        catch
+        {
+            Write-Warning "$( $dll.Name ): $( $_.Exception.Message )"
+        }
+    }
+
+    Write-Host "`nScan complete." -ForegroundColor Green
+}
+
+#
+#.\Repair-AllXnaAssemblyReferences.ps1 `
+#    -ArchiveRoot 'D:\indie-game-archive' `
+#
+
+
+#
+#.\New-IndieGamesCoreRepo `
+#    -Execute -InitializeGit
+#
+#.\Update-IndieGamesCoreSolution.ps1 -Execute

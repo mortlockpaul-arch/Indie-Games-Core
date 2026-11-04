@@ -18,7 +18,10 @@ public static class KnownShaderRepair
             "2101428CE16B5982FFCDFAFE878BDDD16A38D3C668AE6A44F5F943EF91375C5D"],
         ["spotlight"] = ["AA5F17EBCD82154A95AF7D0A4B4617C59C13538F17E88E8CC8AE75CBE359D9F4"],
         ["Blur"] = ["ABCA83F256CD0189A6D3AA3C744E3AB76A6C27B2F35F6F82B81008410B45CC9C"],
-        ["ParticleEffect"] = ["FE654166875C3A3303BDEC9345176A9BF5356A3B3729C9DBDFA9E4D9F0B04A3B"]
+        ["ParticleEffect"] = ["FE654166875C3A3303BDEC9345176A9BF5356A3B3729C9DBDFA9E4D9F0B04A3B"],
+        ["BloomExtract"] = ["C290DC243B2078D3A030853331F5B405B07E2D363DB694D21D1E344D5BFE30F1"],
+        ["BloomCombine"] = ["02F63272849123591A817848B03A2E010FB9FFEDFB6FCC9B2EC2AC74218822F7"],
+        ["GaussianBlur"] = ["F96CD21F0FC6F5D41D0655323DAFF082D148122C5D21D467177E3F3BCBE45C06"]
     };
     public sealed record Result(string Asset, string Status, string Detail);
     public sealed record InstalledEffect(string Name, string Source, string Asset, string TemplateHash, string InstalledHash);
@@ -52,19 +55,28 @@ public static class KnownShaderRepair
         {
             token.ThrowIfCancellationRequested();
             string name = Path.GetFileNameWithoutExtension(asset);
-            if (!Fingerprints.TryGetValue(name, out var hashes)) continue;
+            Fingerprints.TryGetValue(name, out var hashes);
+            if (hashes == null && !RecoveredShaderTemplates.All.Values.Any(t => t.AssetName.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
             string relative = Relative(root, asset);
             string hash = Hash(File.ReadAllBytes(asset));
             var previous = manifest.Effects.SingleOrDefault(e => e.Asset.Equals(relative, StringComparison.OrdinalIgnoreCase));
-            if (!hashes.Contains(hash, StringComparer.OrdinalIgnoreCase) && previous == null)
+            string? canonical = hashes?.Contains(hash, StringComparer.OrdinalIgnoreCase) == true
+                ? Fingerprints.Keys.Single(k => k.Equals(name, StringComparison.OrdinalIgnoreCase)) : null;
+            if (RecoveredShaderTemplates.All.TryGetValue(hash + "|" + name, out var recovered)) canonical = recovered.ResourceName;
+            if (canonical == null && previous != null)
+            {
+                if (Fingerprints.ContainsKey(previous.Name) && previous.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) canonical = previous.Name;
+                else if (RecoveredShaderTemplates.All.Values.Any(t => t.AssetName.Equals(name, StringComparison.OrdinalIgnoreCase) && t.ResourceName == previous.Name)) canonical = previous.Name;
+            }
+            if (canonical == null)
             {
                 results.Add(new(relative, "Unsupported", "Unrecognized shader fingerprint; left untouched."));
                 continue;
             }
-            string canonical = Fingerprints.Keys.Single(k => k.Equals(name, StringComparison.OrdinalIgnoreCase));
             byte[] template = Resource(canonical + ".fx");
             string source = Path.ChangeExtension(asset, ".fx");
-            if (File.Exists(source) && !File.ReadAllBytes(source).AsSpan().SequenceEqual(template))
+            if (File.Exists(source) && !File.ReadAllBytes(source).AsSpan().SequenceEqual(template) &&
+                !(previous != null && Hash(File.ReadAllBytes(source)) == previous.TemplateHash))
             {
                 results.Add(new(relative, "Conflict", "Existing custom HLSL source was preserved."));
                 continue;

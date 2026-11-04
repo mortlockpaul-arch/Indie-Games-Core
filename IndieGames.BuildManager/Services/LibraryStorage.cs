@@ -10,6 +10,8 @@ public sealed class LibraryStorage
     public string Games { get; set; } = @"D:\indie-games";
     public string BuildCache { get; set; } = @"D:\indie-build-cache";
     public string TorrentCache { get; set; } = @"D:\indie-torrent-cache";
+    public string Solution { get; set; } = @"C:\source\Indie-Games-Core\Indie-Games.slnx";
+    public string Scripts { get; set; } = @"C:\PycharmProjects\xenia-game-manager\src\scripts";
     public static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "IndieGames.BuildManager", "storage.json");
     public static LibraryStorage Load()
     {
@@ -34,12 +36,20 @@ public sealed class LibraryStorage
         File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); File.Move(temp, SettingsPath, true);
     }
     public string GameFolder(string project) => Path.Combine(Games, ProjectKey(project));
+    public string ScriptPath(string name)
+    {
+        if (Path.GetFileName(name) != name) throw new ArgumentException("Use a script filename.", nameof(name));
+        // Prefer one shared library. Use the bundled snapshot only on machines
+        // where the shared folder is unavailable; do not mix versions per file.
+        string root = Directory.Exists(Scripts) ? Scripts : Path.Combine(AppContext.BaseDirectory, "scripts");
+        return Path.Combine(root, name);
+    }
     public static string ProjectKey(string project) => Path.GetFileNameWithoutExtension(project) + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(project).ToUpperInvariant())))[..10];
     public IEnumerable<string> BuildArguments(string project)
     {
         Validate();
-        yield return "-p:CustomAfterDirectoryBuildProps=" + Path.Combine(AppContext.BaseDirectory, "scripts", "BuildManager.Layout.props");
-        yield return "-p:CustomBeforeMicrosoftCommonTargets=" + Path.Combine(AppContext.BaseDirectory, "scripts", "BuildManager.Layout.targets");
+        yield return "-p:CustomAfterDirectoryBuildProps=" + ScriptPath("BuildManager.Layout.props");
+        yield return "-p:CustomBeforeMicrosoftCommonTargets=" + ScriptPath("BuildManager.Layout.targets");
         yield return "-p:BuildManagerCache=" + BuildCache;
         yield return "-p:BuildManagerMainProject=" + Path.GetFullPath(project);
         yield return "-p:BuildManagerGameOutput=" + GameFolder(project);

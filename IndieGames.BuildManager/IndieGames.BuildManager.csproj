@@ -1,25 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Version>1.0.5</Version>
+    <Version>1.0.9</Version>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <StartupObject>IndieGames.BuildManager.App</StartupObject>
     <ApplicationIcon>DashboardIcon.ico</ApplicationIcon>
+    <SharedScriptsDirectory Condition="'$(SharedScriptsDirectory)' == ''">$(MSBuildProjectDirectory)\scripts</SharedScriptsDirectory>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="DashboardIcon.ico" />
+    <Resource Include="DashboardIcon.ico" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
     <PackageReference Include="MonoTorrent" Version="3.0.2" />
     <Compile Remove="Tests\**\*.cs" />
   </ItemGroup>
 	<ItemGroup>
-		<None Update="scripts\**\*">
+        <None Remove="scripts\**\*" />
+		<None Include="$(SharedScriptsDirectory)\*.ps1;$(SharedScriptsDirectory)\*.props;$(SharedScriptsDirectory)\*.targets" Link="scripts\%(Filename)%(Extension)">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
 		</None>
 		<None Update="tools\ffmpeg.exe">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -30,5 +34,8 @@
 	</ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets\KnownShaders\*" />
+    <EmbeddedResource Include="Assets\XnaToFna.zip" LogicalName="IndieGames.BuildManager.XnaToFna.zip" />
+    <EmbeddedResource Include="Assets\ShaderDemoBrowser.zip" LogicalName="IndieGames.BuildManager.ShaderDemoBrowser.zip" Condition="Exists('Assets\ShaderDemoBrowser.zip')" />
+    <EmbeddedResource Include="Assets\build-help.json" LogicalName="IndieGames.BuildManager.BuildHelp.json" />
   </ItemGroup>
 </Project>

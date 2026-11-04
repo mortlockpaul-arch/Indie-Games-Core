@@ -15,6 +15,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
     public List<ProjectTransfer> Transfers { get; } = [];
     private ClientEngine? _engine;
     private readonly EngineSettings? _settings;
+    private readonly SemaphoreSlim _shareGate = new(1, 1);
     public int ListenPort { get; set; } = 6881;
     public bool AllowPortForwarding { get; set; }
     public bool NetworkStarted => _engine != null;
@@ -31,13 +32,54 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         DhtEndPoint = new IPEndPoint(IPAddress.Any, ListenPort)
     }.ToSettings());
 
-    public async Task<TorrentProject> CreateShareAsync(SharePlan plan, IReadOnlyList<string> trackers, CancellationToken token)
+    public async Task<TorrentProject> CreateShareAsync(SharePlan plan, IReadOnlyList<string> trackers, CancellationToken token, string iconBase64 = "")
     {
+        await _shareGate.WaitAsync(token);
+        try { return await CreateShareCoreAsync(plan, trackers, token, iconBase64); }
+        finally { _shareGate.Release(); }
+    }
+
+    private async Task<TorrentProject> CreateShareCoreAsync(SharePlan plan, IReadOnlyList<string> trackers, CancellationToken token, string iconBase64)
+    {
+        TorrentCatalogue.ValidateIcon(iconBase64);
+        foreach (string tracker in trackers)
+            if (!Uri.TryCreate(tracker, UriKind.Absolute, out var trackerUri) || trackerUri.Scheme is not ("udp" or "http" or "https")) throw new InvalidDataException("Invalid tracker URL.");
+        string folderName = plan.PackageKind == "Game" ? plan.Name : Path.GetFileName(plan.Folder);
+        ProjectBundle.ValidateSegment(folderName);
         string id = Guid.NewGuid().ToString("N");
         string directory = Path.Combine(StateDirectory, "shares", id);
         string package = Path.Combine(directory, id + ".zip");
         Directory.CreateDirectory(directory);
+        bool retained = false;
+        try
+        {
         await ProjectBundle.CreateAsync(plan, package, token);
+        var content = await SnapshotContents.ReadAsync(package, token);
+        var catalogue = File.Exists(LocalCataloguePath) ? await TorrentCatalogue.LoadAsync(LocalCataloguePath, token) : new TorrentCatalogue();
+        for (int i = 0; i < catalogue.Projects.Count; i++)
+        {
+            var candidate = catalogue.Projects[i];
+            if (candidate.PackageKind != plan.PackageKind || !candidate.Name.Equals(plan.Name, StringComparison.OrdinalIgnoreCase) ||
+                !candidate.FolderName.Equals(folderName, StringComparison.OrdinalIgnoreCase) || candidate.FileCount != plan.Files.Count || candidate.UnpackedBytes != plan.TotalBytes) continue;
+            string cached = CachedPackagePath(candidate);
+            if (!File.Exists(cached)) continue;
+            string existingContent = candidate.ContentSha256;
+            try
+            {
+                await VerifyCachedAsync(candidate, cached, token);
+                if (string.IsNullOrEmpty(existingContent))
+                {
+                    existingContent = (await SnapshotContents.ReadAsync(cached, token)).Fingerprint;
+                    candidate = candidate with { ContentSha256 = existingContent }; catalogue.Projects[i] = candidate;
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidDataException) { continue; }
+            if (!existingContent.Equals(content.Fingerprint, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.IsNullOrEmpty(iconBase64)) candidate = candidate with { IconBase64 = iconBase64 };
+            catalogue.Projects[i] = candidate;
+            await catalogue.SaveAsync(LocalCataloguePath, token);
+            return candidate;
+        }
         var creator = new TorrentCreator(TorrentType.V1Only) { Comment = "Indie Games Build Manager project snapshot" };
         foreach (string tracker in trackers)
         {
@@ -49,15 +91,55 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         byte[] metadata = await File.ReadAllBytesAsync(torrentPath, token);
         var torrent = await Torrent.LoadAsync(metadata);
         await using var input = File.OpenRead(package);
-        var project = new TorrentProject { PackageKind = plan.PackageKind, Id = id, Name = plan.Name, FolderName = Path.GetFileName(plan.Folder), PackageName = id + ".zip",
+        var project = new TorrentProject { PackageKind = plan.PackageKind, Id = id, Name = plan.Name, FolderName = folderName, PackageName = id + ".zip",
             PackageBytes = input.Length, UnpackedBytes = plan.TotalBytes, FileCount = plan.Files.Count,
-            Sha256 = Convert.ToHexString(await SHA256.HashDataAsync(input, token)), InfoHash = torrent.InfoHashes.V1!.ToHex(),
-            TorrentBase64 = Convert.ToBase64String(metadata), CreatedUtc = DateTimeOffset.UtcNow };
+            Sha256 = Convert.ToHexString(await SHA256.HashDataAsync(input, token)), ContentSha256 = content.Fingerprint, InfoHash = torrent.InfoHashes.V1!.ToHex(),
+            TorrentBase64 = Convert.ToBase64String(metadata), IconBase64 = iconBase64, CreatedUtc = DateTimeOffset.UtcNow };
         await TorrentCatalogue.ValidateAsync(project);
-        var catalogue = File.Exists(LocalCataloguePath) ? await TorrentCatalogue.LoadAsync(LocalCataloguePath, token) : new TorrentCatalogue();
         catalogue.Projects.Add(project);
         await catalogue.SaveAsync(LocalCataloguePath, token);
+        retained = true;
         return project;
+        }
+        finally
+        {
+            if (!retained)
+            {
+                string prefix = Path.GetFullPath(Path.Combine(StateDirectory, "shares")) + Path.DirectorySeparatorChar;
+                if (Path.GetFullPath(directory).StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && Path.GetFileName(directory) == id)
+                {
+                    try
+                    {
+                        File.Delete(package); File.Delete(Path.Combine(directory, id + ".torrent"));
+                        if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+                    }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+        }
+    }
+
+    public string CachedPackagePath(TorrentProject project)
+    {
+        string own = Path.Combine(StateDirectory, "shares", project.Id, project.PackageName);
+        return File.Exists(own) ? own : Path.Combine(StateDirectory, "downloads", project.InfoHash.ToLowerInvariant(), project.PackageName);
+    }
+
+    static async Task VerifyCachedAsync(TorrentProject project, string path, CancellationToken token)
+    {
+        await using var file = File.OpenRead(path);
+        if (file.Length != project.PackageBytes || !Convert.ToHexString(await SHA256.HashDataAsync(file, token)).Equals(project.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Cached package is incomplete or failed its checksum.");
+    }
+
+    public async Task<SnapshotContents> InspectContentsAsync(TorrentProject project, CancellationToken token)
+    {
+        await TorrentCatalogue.ValidateAsync(project);
+        string path = CachedPackagePath(project);
+        if (!File.Exists(path)) throw new FileNotFoundException("Download or create this snapshot locally before comparing its files.", path);
+        await VerifyCachedAsync(project, path, token);
+        return await SnapshotContents.ReadAsync(path, token);
     }
 
     public async Task<ProjectTransfer> StartAsync(TorrentProject project, bool seed, CancellationToken token)
@@ -87,8 +169,32 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         var manager = await Engine.AddAsync(torrent, Path.GetDirectoryName(package)!, new TorrentSettingsBuilder { MaximumConnections = 40 }.ToSettings());
         var transfer = new ProjectTransfer(project, manager, package);
         Transfers.Add(transfer);
+        if(seed)
+        {
+            await manager.HashCheckAsync(false).WaitAsync(token);
+            if(!manager.Complete)
+            {
+                await Engine.RemoveAsync(manager);Transfers.Remove(transfer);
+                throw new InvalidDataException("Cached package does not match the torrent pieces; seeding was skipped.");
+            }
+        }
         await manager.StartAsync();
         return transfer;
+    }
+
+    public async Task<int> SeedLocalCatalogueAsync(Action<string> log, CancellationToken token)
+    {
+        if(!File.Exists(LocalCataloguePath)){log("No saved local catalogue. No transfers started.");return 0;}
+        var catalogue=await TorrentCatalogue.LoadAsync(LocalCataloguePath,token);
+        int started=0;
+        foreach(var project in catalogue.Projects)
+        {
+            token.ThrowIfCancellationRequested();
+            try {await StartAsync(project,true,token);started++;log("Seeding: "+project.Name);}
+            catch(Exception error) when(error is IOException or InvalidOperationException or ArgumentException)
+            {log("Skipped "+project.Name+": "+error.Message);}
+        }
+        log($"Seeding {started} completed local package(s).");return started;
     }
 
     public async Task RemoveAsync(TorrentProject project, CancellationToken token)
@@ -121,6 +227,6 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         if (_engine == null) return;
         try { await Task.WhenAll(Transfers.Select(t => t.Manager.StopAsync())).WaitAsync(TimeSpan.FromSeconds(15)); }
         catch (TimeoutException) { /* Dispose still closes the peer listeners; cached pieces can be rechecked next time. */ }
-        finally { _engine.Dispose(); _engine = null; }
+        finally { _engine.Dispose(); _engine = null; Transfers.Clear(); }
     }
 }

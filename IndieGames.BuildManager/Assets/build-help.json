@@ -1,0 +1,205 @@
+{
+  "title": "Build and Repair Help",
+  "chapters": [
+    {
+      "title": "Getting Started",
+      "sections": [
+        {
+          "title": "1 Scan and Select Games",
+          "body": "Choose your source archive and Scan Games. Select game rows in the grid. Green rows are included in the configured Visual Studio solution; blue rows are selected. Selection and solution membership are different."
+        },
+        {
+          "title": "2 Build and Diagnose",
+          "body": "Launch Build Manager from the top toolbar to build the selected projects, choose architecture and inspect diagnostics. The game and native libraries must use the same architecture. Build errors involving an original XNA assembly may come from a third-party DLL; see XNA DLL repair."
+        },
+        {
+          "title": "3 Run and Share",
+          "body": "Use Run game in Build Manager to capture console output and errors. Diagnostics → Open game logs opens saved logs. Build and test before creating a playable share. The catalogue Help / Getting started explains packaging, saving the catalogue, seeding, downloading and installing."
+        }
+      ]
+    },
+    {
+      "title": "XNA DLL Repair",
+      "sections": [
+        {
+          "title": "When Is This Needed?",
+          "body": "If a game already references FNA but reports CS0012 saying ContentManager, GameTime or another XNA type needs Microsoft.Xna.Framework, a third-party DLL may still have been compiled against the original XNA assemblies. Adding FNA to the game project does not change references inside that DLL."
+        },
+        {
+          "title": "What XnaAssemblyRedirector Does",
+          "body": "The tool reads a library's assembly metadata and redirects references to XNA types to their matching definitions in FNA or FNA.NetStub. It writes patched DLL copies under the game's obj folder. The build must use those copies instead of the originals. Original DLLs in 584E07D1 remain intact."
+        },
+        {
+          "title": "Enable the Build Integration",
+          "body": "The archive's Directory.Build.targets imports Directory.Build.XnaRedirect.targets. Opt a game in by adding <EnableXnaDllRedirect>true</EnableXnaDllRedirect> to a PropertyGroup in its .csproj, then rebuild. Alternatively pass -p:EnableXnaDllRedirect=true to dotnet build. This is a build integration, not a repair automatically applied to every game. The target points to the tool under C:\\source\\Indie-Games-Core\\tools\\XnaAssemblyRedirector; its FNA and NetStub paths must point to compatible built assemblies."
+        },
+        {
+          "title": "Read the Results",
+          "body": "PATCHED means a copy was written. SKIPPED means the original remains in use: required types may be unavailable, or the library may be strong-named and cannot be rewritten without invalidating its signature. Such libraries need a compatible replacement or a rebuild from source. Do not add the original XNA framework alongside FNA to hide this error."
+        },
+        {
+          "title": "What Verification Guarantees",
+          "body": "Verification checks type names and their replacement assemblies. It does not prove method signatures, native dependencies or runtime behavior are compatible. Rebuild, inspect remaining errors, then launch and test the game before sharing it. If the same CS0012 remains, check that the compiler resolves the patched copy rather than a matching original DLL elsewhere."
+        }
+      ]
+    },
+    {
+      "title": "Shared SunBurn",
+      "sections": [
+        {
+          "title": "One Source Project for All Affected Games",
+          "body": "SunBurn source lives at C:\\source\\Indie-Games-Core\\SunBurn.Decompiled. It is a shared library project in the solution, not part of an individual game's source folder. It targets .NET 9 Windows and references FNA and FNA.NetStub."
+        },
+        {
+          "title": "Automatic Build-time Selection",
+          "body": "The archive's Directory.Build.targets imports Directory.Build.SunBurn.targets, which loads Shared\\SunBurn.targets from the configured IndieGamesCoreRoot. For games with a direct SynapseGaming-SunBurn-Pro reference, it substitutes a reference to the shared source project and enables XNA DLL redirection. Games without that reference are unaffected. Normal builds build the shared project as a dependency; BuildProjectReferences=false requires it to be built separately first."
+        },
+        {
+          "title": "Dependent DLLs Also Need to Agree",
+          "body": "The source-built SunBurn assembly has no original signing key. XnaAssemblyRedirector uses --replacement to update SunBurn assembly references in patched copies of compatible unsigned dependent DLLs, such as Indiefreaks.Game.Framework. This is in addition to redirecting their XNA types to FNA. Original DLLs remain intact; signed dependent DLLs are still skipped."
+        },
+        {
+          "title": "Settings and Rollback",
+          "body": "UseSharedSunBurn defaults to true. Pass -p:UseSharedSunBurn=false to retain the original SunBurn DLL reference. SharedSunBurnProject can override the shared project path. Missing source produces a clear build error. Reload the solution after moving projects. Disabling shared SunBurn does not automatically make an original XNA game FNA-compatible."
+        },
+        {
+          "title": "Current Verification and Limits",
+          "body": "The shared SunBurn library compiles against FNA. The Zombie game uses the official shared DigitalRune source, but still has other legacy dependency build errors. Full game runtime and graphics compatibility have not been verified. Original embedded Xbox 360 effects are preserved and may require Windows conversion."
+        }
+      ]
+    },
+    {
+      "title": "Tools and Updates",
+      "sections": [
+        {
+          "title": "Automatic Startup Checks",
+          "body": "Open Settings → Tools & Updates to see the FNA and ILSpy controls. Checks run in the background when XBLIG Rebuilder starts; they never install anything. The small notice beside the main heading opens this settings page. Offline or failed checks allow retry."
+        },
+        {
+          "title": "Installing Updates",
+          "body": "Click Update FNA to check and download the latest successful native-library artifacts. GitHub artifact downloads may need your configured token. Click Update ILSpy to pull, build and archive the GUI and command-line tools from the configured source checkout. An up-to-date source branch does not prove deployed tools have been rebuilt. Review the main log for errors."
+        },
+        {
+          "title": "Compressed Tools and Cleanup",
+          "body": "Compressed archives stay in src/assets/tools. Build Manager, ILSpy and the command-line decompiler are extracted into named subfolders when used. ToolManager keeps active tools available and removes extracted folders after use. Build Manager stays extracted while its background process is seeding; its cleanup watcher removes the folder after the process exits. The archives are kept for next time. Startup preparation is asynchronous."
+        },
+        {
+          "title": "Background Torrent Seeding",
+          "body": "The Torrent Seeding section can start or stop seeding and toggle seeding at Python UI startup. Background mode seeds only verified completed packages from My Catalogue; it does not download or install. It uses the same Build Manager instance as the normal UI. Closing Python keeps the seeder running. Open Build Manager to view transfers; closing that window returns it to the background. Stop Seeding, or Stop Torrents in Build Manager, exits background mode. Cached packages remain available."
+        },
+        {
+          "title": "Help Videos",
+          "body": "In XBLIG Rebuilder, Help → Help Videos plays short captioned MP4 walkthroughs using the FFmpeg backend. Choose a topic and press Play; pause and seek controls are available. The updater video uses illustrative responses and does not record live downloads."
+        }
+      ]
+    },
+    {
+      "title": "DigitalRune",
+      "sections": [
+        {
+          "title": "Official Source in Your Fork",
+          "body": "Shared source is in C:/source/Indie-Games-Core/DigitalRune. origin is mortlockpaul-arch/DigitalRune; upstream is DigitalRune/DigitalRune. The official source is BSD 3-Clause licensed. The old decompiled projects are retained for comparison but removed from the active solution. No changes have been pushed."
+        },
+        {
+          "title": "FNA and MonoGame Builds",
+          "body": "Build/Modern contains six .NET 9 Windows runtime projects: base, Mathematics, Geometry, Animation, Physics and Physics.Specialized. GraphicsBackend selects FNA (default) or MonoGame. MonoGame uses DesktopGL 3.8.4.1 by default; MonoGameVersion can override it. FnaProject can override the sibling FNA source project path. Each backend has separate bin and obj folders. All framework-dependent libraries in a game must use the same backend."
+        },
+        {
+          "title": "Build-Time Game References",
+          "body": "Shared/DigitalRune.targets in Indie-Games-Core substitutes direct DigitalRune DLL references with the official source projects. UseSharedDigitalRune=false restores the original binary-reference selection. The existing Zombie game uses FNA. A MonoGame DigitalRune build alone does not migrate that entire game to MonoGame."
+        },
+        {
+          "title": "Running the Built-In Samples",
+          "body": "Open DigitalRune.SampleTester from the solution or the supplied executable. Select FNA or MonoGame, then BasicMathSample or BoxStackSample. Run builds and starts that example. Headless Check runs the physics sample without a graphics window; the math sample writes results to the log. Escape closes the graphical sample. The sample classes are linked unchanged from the repository; a small host provides their display and logging instead of building the full legacy sample-browser content pipeline."
+        },
+        {
+          "title": "Verified Scope",
+          "body": "All six libraries compile for both backends. The original math sample and 600-step BoxStack check pass on both, and both graphical hosts completed smoke checks. Legacy Xbox LIVE Avatar animation/ragdoll helpers are excluded from the desktop builds. The Zombie game still has other legacy animation-library build errors and is not claimed playable."
+        },
+        {
+          "title": "Stable SDK Selection",
+          "body": "DigitalRune/global.json pins installed stable SDK 10.0.403 and excludes preview SDKs. Libraries still target .NET 9 Windows. NETSDK1057 is an informational preview-SDK notice; an ILSpy checkout may intentionally request a preview SDK in its own global.json. The sample tester clears inherited SDK overrides before invoking child builds."
+        }
+      ]
+    },
+    {
+      "title": "Content Repairs and Shader Demos",
+      "sections": [
+        {
+          "title": "Shader Repairs",
+          "body": "Select game rows, then open Repairs → Shaders. Supported original Xbox effects are recognized by fingerprints, rebuilt as Windows effects and installed with backups and a rebuild hook. Current support includes all 25 Dead.Kings and 14 Adamant Ants shader-folder effects plus four earlier shared repairs. Unknown assets and custom source edits are preserved. The shared XNA Effect Decompiler uses HlslDecompiler with instruction-level recovery; successful compilation alone does not establish correct gameplay visuals."
+        },
+        {
+          "title": "Shader Demo Browser",
+          "body": "Open Repairs → Shader demos. Type to filter the 43 supported repair effects, choose a row, use Next technique or Tab, and pause with Space. Post-process, line, particle and mesh fixtures use synthetic assets. They are previews, not original game scenes. Some centroid interpolation is replaced for FNA compatibility; multisampled edges can differ. DigitalRune Sample Tester is a separate app. No runnable SunBurn demo suite was found in the shared source."
+        },
+        {
+          "title": "Videos",
+          "body": "Select game rows and choose Repairs → Videos. The configured FFmpeg converts WMV, AVI, MP4, MOV and M4V files under Content to Theora video and Vorbis audio in .ogv files. Originals and existing OGVs are retained. FNA automatically finds a matching OGV for the original WMV asset name. Rebuild to copy content to bin and restart the game to reload it. The operation supports cancellation and removes incomplete conversion output."
+        },
+        {
+          "title": "Legacy Font Transparency",
+          "body": "Repairs → Fonts converts legacy XNA 3.x font atlases to premultiplied RGBA for FNA. This fixes solid glyph rectangles while keeping glyph masks, spacing and kerning. Texture conversion remains separate; fonts need this extra alpha step."
+        },
+        {
+          "title": "Snapshot Types and Duplicate Shares",
+          "body": "Source files and Playable game are intentionally separate packages. Each immutable snapshot has its own creation time and ID. Repeating New share with unchanged file names and bytes now reuses a valid cached snapshot. Changing content creates a new revision. ZIP timestamps and compression metadata are ignored for content comparison. Older duplicates are retained; select two rows for the same game and package type and use Compare snapshots to list added, removed or changed files. Both packages must be cached locally. Remove selected can remove an unwanted catalogue row while retaining cached and installed files."
+        }
+      ]
+    },
+    {
+      "title": "Convert Compiled XNA Games",
+      "sections": [
+        {
+          "title": "Choose the Right Repair",
+          "body": "XnaAssemblyRedirector remains the default for legacy DLLs used by source projects rebuilt against FNA. Repairs → Convert compiled XNA game opens the alternative XnaToFna workflow for an original compiled .NET Framework game. Do not run both conversions automatically on the same files."
+        },
+        {
+          "title": "Convert a Separate Copy",
+          "body": "Choose the original game EXE and a complete matching legacy FNA runtime folder, including SDL2 and native libraries. Check compatibility, then Convert separate copy. The whole game folder is copied to a new uniquely named folder in Playable Windows games. Original files remain untouched. Binary backups, SHA-256 input inventory, conversion.log and conversion-report.json are retained. Cancelled or failed copies remain hidden with an error report for diagnosis."
+        },
+        {
+          "title": "Runtime Compatibility and Limits",
+          "body": "The bundled converter is the unmodified upstream v18.05.1 release, with licence notices. Its .NET Framework process cannot load our modern .NET FNA builds; the compatibility check explains this and prevents that combination. The modified XnaToFna.dll shipped with One Night You’re Crazy is not substituted. Its exact source revision is unconfirmed. Assets stay unchanged during conversion; use the separate audio, video or shader repairs as needed. A successful conversion validates assembly references, but is not proof that a whole game runs correctly. Test the converted copy before sharing."
+        },
+        {
+          "title": "Find and Run the Result",
+          "body": "Open the converted folder, then use Playable Games / Ports to run or share it. Keep its XnaToFna runtime helper and dependencies beside the game. Xbox online services may be stubs and remain unavailable."
+        }
+      ]
+    },
+    {
+      "title": "In-Game Settings Overlay",
+      "sections": [
+        {
+          "title": "Install From Build Manager",
+          "body": "Select one or more game rows, open Repairs and click Add F1 settings overlay. The installer checks supported .NET 9+ Windows FNA/MonoGame source hosts, backs up source/project files to .backups/f1-overlay-*.zip, adds the matching overlay project and wires the game loop. Rebuild, run the game and press F1. Repeating the action leaves existing hooks alone and can restore a missing project reference. Custom/inherited hosts, ambiguous layouts and complex draw control flow are reported for manual integration. Manic Miner 360 and Jet Set Willy 360 receive their known fixed-resolution canvas adapter."
+        },
+        {
+          "title": "F1 Settings for Ordinary Games",
+          "body": "IndieGames.Overlay.FNA and IndieGames.Overlay.MonoGame provide the same general settings panel for rebuilt desktop games: resolution, fullscreen/windowed display, master volume and controller connection status. F1 opens it; F1 or Escape resumes. It contains no Spectrum ROM browser or emulation controls. Jet Set Willy 360 is the first integration. Rebuild it to include the overlay."
+        },
+        {
+          "title": "Integrating Another Game",
+          "body": "Reference the overlay project matching the game framework and create GameSettingsOverlay(game, graphicsManager). Register it as a drawable component, set Enabled=false and call its Update at the start of the game Update override. Return while IsOpen to pause game logic. Connect PauseChanged to pause/resume that game’s audio. Draw the overlay last via base.Draw. Both projects compile Shared/GameSettingsOverlay.cs; never reference FNA and MonoGame overlay assemblies in the same process. The current font renderer targets Windows and .NET 9."
+        },
+        {
+          "title": "Fixed Resolution Games",
+          "body": "Games with hard-coded coordinates need a virtual canvas rather than changing their layout dimensions directly. GameCanvas renders the existing game at its original resolution and scales/letterboxes that frame to the chosen display size. Jet Set Willy uses a 1280×720 canvas and freezes its last frame while the menu is open, so draw-time game logic also pauses. Other games need the same host integration or their own resolution-aware rendering."
+        },
+        {
+          "title": "Saved Settings",
+          "body": "Settings are stored per executable assembly name under %LOCALAPPDATA%\\IndieGames\\GameSettings. Display changes roll back if ApplyChanges fails. Controller status confirms framework detection; it does not replace a game’s own button mappings."
+        },
+        {
+          "title": "Performance and Startup Diagnostics",
+          "body": "F1 opens Settings, Info and Logs tabs. F2 toggles the small live HUD. Info reports draw FPS, process CPU load normalized across available logical processors, resident RAM, managed heap, per-process GPU 3D load, dedicated/shared GPU memory estimates, renderer/adapter, framework/runtime versions and active display/audio/environment settings. GPU counters run independently in the background; unsupported counters show unavailable, not invented values. GPU memory is an OS estimate and may differ from hardware allocation. Logs retains bounded startup/recent output and can save a diagnostic report. New source installations start managed capture with a module initializer. Build Manager launch capture also supplies the log path for native output."
+        },
+        {
+          "title": "Scaling and Filters",
+          "body": "Games with a GameCanvas adapter can select Game default, Nearest, Linear, Integer scaling or Scanlines. Integer scaling applies when the window can fit at least the native canvas size; smaller windows scale down to fit. Nearest preserves crisp pixels, Linear smooths scaling, and Scanlines adds a light raster effect. Games without a canvas display a clear adapter requirement. These modes are not FSR, xBR or AI upscalers. Existing per-game settings are preserved until the user selects an override."
+        }
+      ]
+    }
+  ]
+}

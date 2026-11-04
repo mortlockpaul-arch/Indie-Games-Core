@@ -2,6 +2,12 @@ using System.IO;
 namespace IndieGames.BuildManager.Services;
 public sealed record ShareSelection(string Source, string PlayableGame, string Name)
 {
+    public static ShareSelection ForPlayable(string folder)
+    {
+        var game = PortableGames.Inspect(Path.GetFullPath(folder));
+        _ = PortableGames.ResolveExecutable(game.Folder);
+        return new(game.Folder, game.Folder, game.Name);
+    }
     public static IReadOnlyList<string> SourceFolders(string archive)
     {
         string root=Path.GetFullPath(archive);

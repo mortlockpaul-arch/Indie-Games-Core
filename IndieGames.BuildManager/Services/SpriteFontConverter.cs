@@ -89,7 +89,7 @@ public static class SpriteFontConverter
                     object loaded = load.Invoke(null, [decodeSource])!;
                     object asset = Member(loaded, "Asset");
                     if (header[3] == 'x') NormalizeXboxTexture(textures ? asset : Member(asset, "Texture"), header[4]);
-                    byte[] converted = textures ? WriteTexture(asset) : WriteFont(asset);
+                    byte[] converted = textures ? WriteTexture(asset) : WriteFont(asset, legacyStraightAlpha: header[4] < 5);
                     if (File.ReadAllBytes(source).AsSpan().SequenceEqual(converted))
                     {
                         results.Add(new(relative, "Skipped", "Conversion already up to date"));
@@ -216,7 +216,7 @@ public static class SpriteFontConverter
         return stream.ToArray();
     }
 
-    private static byte[] WriteFont(object font)
+    private static byte[] WriteFont(object font, bool legacyStraightAlpha)
     {
         var glyphs = Items(font, "Glyphs");
         var cropping = Items(font, "Cropping");
@@ -240,7 +240,19 @@ public static class SpriteFontConverter
         writer.Write7BitEncodedInt(0); // shared resources
         writer.Write7BitEncodedInt(1); // SpriteFont
         writer.Write7BitEncodedInt(2); // embedded Texture2D
-        WriteTexturePayload(writer, texture);
+        if (legacyStraightAlpha)
+        {
+            var mips = Items(texture, "MipData");
+            int width = (int)Member(texture, "Width"), height = (int)Member(texture, "Height");
+            int format = System.Convert.ToInt32(Member(texture, "WindowsFormat"));
+            writer.Write(0); writer.Write(width); writer.Write(height); writer.Write(mips.Length);
+            for (int level = 0; level < mips.Length; level++)
+            {
+                byte[] rgba = LegacyFontAtlas.DecodePremultiplied(format, Math.Max(1, width >> level), Math.Max(1, height >> level), (byte[])mips[level]);
+                writer.Write(rgba.Length); writer.Write(rgba);
+            }
+        }
+        else WriteTexturePayload(writer, texture);
         void Rectangles(object[] rectangles)
         {
             writer.Write7BitEncodedInt(3);

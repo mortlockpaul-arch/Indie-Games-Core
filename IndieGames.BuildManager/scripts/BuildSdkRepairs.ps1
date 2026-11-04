@@ -1,14 +1,5 @@
-﻿param(
-    [string]$Root = "C:\source\Indie-Games\indie-game-archive",
-    [string]$Folder = "Avatar Farm! (World) (XBLIG)",
-    [ValidateSet("Rename", "NetSdk1005", "SharedAssets", "SDK1047")]
-    [string]$Action = "NetSdk1005",
-    [switch]$Restore,
-    [switch]$Clean,
-    [switch]$FixRuntimeIdentifiers,
-    [string]$Framework = "net9.0-windows",
-    [string]$Runtime = "win-x64"
-)
+﻿# Shared SDK repair function library. Use fix_sdk1005.ps1 for command-line actions.
+
 
 $ErrorActionPreference = "Stop"
 

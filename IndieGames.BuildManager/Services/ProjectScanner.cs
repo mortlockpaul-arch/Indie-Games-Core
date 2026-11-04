@@ -43,7 +43,7 @@ public static class ProjectScanner
                         return saved?.Value.Trim() ?? string.Join("; ",doc.Descendants().Where(e=>e.Name.LocalName==name).Select(e=>e.Value.Trim()).Where(v=>v.Length>0).Distinct());
                     }
                     result.Add(new GameProject {
-                        Name=Path.GetFileNameWithoutExtension(file),Path=file,
+                        Name=Path.GetFileNameWithoutExtension(file),Path=file,IconPath=FindIcon(file, doc),
                         TargetFramework=Read("TargetFrameworks") is { Length:>0 } multi ? multi : Read("TargetFramework"),
                         PlatformTarget=Read("PlatformTarget"),Platforms=Read("Platforms"),
                         RuntimeIdentifier=Read("RuntimeIdentifiers") is { Length:>0 } ris ? ris : Read("RuntimeIdentifier"),OutputType=Read("OutputType") });
@@ -53,5 +53,24 @@ public static class ProjectScanner
             Report(new(i+1,folders.Count,result.Count,folders[i],false),i==folders.Count-1);
         }
         return result.OrderBy(p=>p.Name,StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string FindIcon(string project, XDocument document)
+    {
+        string folder = Path.GetDirectoryName(project)!;
+        var candidates = document.Descendants().Where(e => e.Name.LocalName == "ApplicationIcon")
+            .Select(e => e.Value.Trim().Replace("$(MSBuildProjectDirectory)", folder))
+            .Where(value => value.Length > 0 && !value.Contains("$(", StringComparison.Ordinal))
+            .Concat(new[] { "DashboardIcon.ico", "app.ico", "Game.ico", "icon.ico" });
+        foreach (string candidate in candidates)
+        {
+            try
+            {
+                string path = Path.GetFullPath(Path.IsPathRooted(candidate) ? candidate : Path.Combine(folder, candidate));
+                if (File.Exists(path)) return path;
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { }
+        }
+        return "";
     }
 }

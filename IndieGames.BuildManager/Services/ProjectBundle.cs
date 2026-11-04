@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 
@@ -14,8 +14,8 @@ public sealed record SharePlan(string Folder, string Name, IReadOnlyList<ShareFi
 public static class ProjectBundle
 {
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
-    { "bin", "obj", ".git", ".svn", ".hg", ".vs", ".idea", "logs", "backup", "backups", ".backup", ".backups", "node_modules", ".torrent-sharing", "torrent-sharing",
-      "audio-conversion", "font-conversion", "texture-conversion", "wavebank-conversion", "effect-recovery" };
+    { "bin", "obj", ".git", ".svn", ".hg", ".vs", ".idea", "logs", "backup", "backups", ".backup", ".backups", ".xnatofna-backup", "node_modules", ".torrent-sharing", "torrent-sharing",
+      "audio-conversion", "font-conversion", "texture-conversion", "wavebank-conversion", "effect-recovery", "shader-repair-backups", "font-repair-backups", "video-conversion" };
 
     public static SharePlan Preview(string folder, CancellationToken token = default, string packageKind = "Source")
     {
@@ -29,7 +29,7 @@ public static class ProjectBundle
             foreach (var child in Directory.EnumerateDirectories(directory))
             {
                 string name = Path.GetFileName(child);
-                if (!ExcludedDirectories.Contains(name) && !name.StartsWith("584E", StringComparison.OrdinalIgnoreCase) && !name.StartsWith(".torrent-install-", StringComparison.OrdinalIgnoreCase)) Walk(child);
+                if ((!ExcludedDirectories.Contains(name) || packageKind == "Game" && name.Equals("bin", StringComparison.OrdinalIgnoreCase)) && !name.StartsWith("584E", StringComparison.OrdinalIgnoreCase) && !name.StartsWith(".torrent-install-", StringComparison.OrdinalIgnoreCase)) Walk(child);
             }
             foreach (var file in Directory.EnumerateFiles(directory))
             {
@@ -48,13 +48,14 @@ public static class ProjectBundle
         }
         Walk(root);
         if (!files.Any(f => packageKind == "Source" ? f.RelativePath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) : IsGameEntry(f.RelativePath, files.Select(x => x.RelativePath))))
-            throw new InvalidDataException("Choose source containing a .csproj, or a playable game folder containing an .exe with matching .runtimeconfig.json and .deps.json.");
+            throw new InvalidDataException("Choose source containing a .csproj, or a playable Windows game folder containing a game executable. Modern .NET builds also need their matching runtimeconfig/deps files.");
+        if (packageKind == "Game" && PortableGames.ReadManifest(root) is { EntryPoint.Length: > 0 }) _ = PortableGames.ResolveExecutable(root);
         string projectName = Path.GetFileName(root); ValidateSegment(projectName);
         if (files.Count > 100000 || files.Sum(f => f.Bytes) > 100L * 1024 * 1024 * 1024) throw new InvalidDataException("Project snapshot exceeds the supported size.");
         return new(root, projectName, files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase).ToArray()) { PackageKind = packageKind };
     }
 
-    private static bool IsGameEntry(string path, IEnumerable<string> files) => path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && files.Contains(Path.ChangeExtension(path, ".runtimeconfig.json"), StringComparer.OrdinalIgnoreCase) && files.Contains(Path.ChangeExtension(path, ".deps.json"), StringComparer.OrdinalIgnoreCase);
+    private static bool IsGameEntry(string path, IEnumerable<string> files) => PortableGames.IsEntry(path, files);
 
     public static async Task CreateAsync(SharePlan plan, string zipPath, CancellationToken token)
     {
@@ -76,6 +77,7 @@ public static class ProjectBundle
             await using var input = File.OpenRead(source);
             if (input.Length != item.Bytes) throw new IOException("Project changed since preview. Preview again.");
             var entry = zip.CreateEntry(item.RelativePath.Replace('\\', '/'), CompressionLevel.Fastest);
+            entry.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
             await using var output = entry.Open();
             await input.CopyToAsync(output, token);
         }
@@ -127,6 +129,7 @@ public static class ProjectBundle
                 await using var input = entry.Open(); await using var output = new FileStream(path, FileMode.CreateNew);
                 await input.CopyToAsync(output, token);
             }
+            if (project.PackageKind == "Game" && PortableGames.ReadManifest(staging) is { EntryPoint.Length: > 0 }) _ = PortableGames.ResolveExecutable(staging);
             token.ThrowIfCancellationRequested();
             Directory.Move(staging, destination);
             return destination;

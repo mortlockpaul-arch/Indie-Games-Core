@@ -6,7 +6,7 @@ using IndieGames.BuildManager.Services;
 if(args.Length>0 && args[0]=="--verify-published")
 {
     var assembly=System.Reflection.Assembly.LoadFrom(Path.GetFullPath(args[1]));
-    foreach(string name in new[]{"RoundLine.fx","spotlight.fx","Blur.fx","ParticleEffect.fx","BuildKnownShaders.ps1"})
+    foreach(string name in new[]{"RoundLine.fx","spotlight.fx","Blur.fx","ParticleEffect.fx","BloomExtract.fx","BloomCombine.fx","GaussianBlur.fx","BuildKnownShaders.ps1"})
         if(!assembly.GetManifestResourceNames().Any(n=>n.EndsWith(".KnownShaders."+name,StringComparison.Ordinal)))throw new Exception("Published resource missing: "+name);
     var type=assembly.GetType("IndieGames.BuildManager.Services.KnownShaderRepair",throwOnError:true)!;
     var task=(Task)type.GetMethod("RepairAsync")!.Invoke(null,[args[2],(Action<string>)Console.WriteLine,CancellationToken.None,null])!;
@@ -103,3 +103,45 @@ Same(snapshot,traversal);
 Console.WriteLine("PASS: manifests cannot write outside the game project.");
 File.WriteAllText(Path.Combine(work,"known-shader-valid-fixture.txt"),valid);
 Console.WriteLine("VALID FIXTURE: "+valid);
+
+string bloom = Path.Combine(Suite,"bloom");
+Directory.CreateDirectory(Path.Combine(bloom,"Content","Shaders"));
+File.WriteAllText(Path.Combine(bloom,"Game.csproj"),"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0-windows</TargetFramework></PropertyGroup></Project>");
+string[] bloomNames=["BloomExtract","BloomCombine","GaussianBlur"];
+foreach(var name in bloomNames)File.WriteAllBytes(Path.Combine(bloom,"Content","Shaders",name+".xnb"),Original(name));
+var bloomResults=await KnownShaderRepair.RepairAsync(Path.Combine(bloom,"Game.csproj"),Console.WriteLine,token);
+Require(bloomResults.Count(r=>r.Status=="Repaired")==3,"Three fingerprinted bloom effects must repair.");
+var bloomBackup=Directory.GetDirectories(Path.Combine(bloom,"shader-repair-backups")).Single();
+foreach(var name in bloomNames)Require(File.ReadAllBytes(Path.Combine(bloomBackup,"Content","Shaders",name+".xnb")).SequenceEqual(Original(name)),"Bloom backup differs: "+name);
+snapshot=Snapshot(bloom);
+var bloomRepeat=await KnownShaderRepair.RepairAsync(Path.Combine(bloom,"Game.csproj"),_=>{},token,Path.Combine(Suite,"no-sdk.exe"));
+Require(bloomRepeat.Count(r=>r.Status=="UpToDate")==3,"Bloom repeat must be idempotent.");Same(snapshot,bloom);
+Console.WriteLine("PASS: bloom repairs, exact backups, and repeat-run idempotency.");
+File.WriteAllText(Path.Combine(work,"known-bloom-valid-fixture.txt"),bloom);
+
+string recoveredRoot=Path.Combine(Suite,"recovered");Directory.CreateDirectory(Path.Combine(recoveredRoot,"Content"));
+File.WriteAllText(Path.Combine(recoveredRoot,"Game.csproj"),"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net9.0-windows</TargetFramework></PropertyGroup></Project>");
+var recoveredFixtures=Directory.GetFiles(Path.Combine(fixtures,"Recovered"),"*.xnb",SearchOption.AllDirectories);
+Require(recoveredFixtures.Length==36,"Expected 36 recovered custom-effect fixtures.");
+foreach(var file in recoveredFixtures){string to=Path.Combine(recoveredRoot,"Content",Path.GetRelativePath(Path.Combine(fixtures,"Recovered"),file));Directory.CreateDirectory(Path.GetDirectoryName(to)!);File.Copy(file,to);}
+var recoveredResults=await KnownShaderRepair.RepairAsync(Path.Combine(recoveredRoot,"Game.csproj"),_=>{},token);
+Require(recoveredResults.Count(r=>r.Status=="Repaired")==36,"All recovered custom effects must repair.");
+snapshot=Snapshot(recoveredRoot);
+var recoveredRepeat=await KnownShaderRepair.RepairAsync(Path.Combine(recoveredRoot,"Game.csproj"),_=>{},token,Path.Combine(Suite,"no-sdk.exe"));
+Require(recoveredRepeat.Count(r=>r.Status=="UpToDate")==36,"Custom repairs must be idempotent.");Same(snapshot,recoveredRoot);
+var recoveredBackup=Directory.GetDirectories(Path.Combine(recoveredRoot,"shader-repair-backups")).Single();
+foreach(var file in recoveredFixtures){var original=Path.Combine(recoveredBackup,"Content",Path.GetRelativePath(Path.Combine(fixtures,"Recovered"),file));Require(File.ReadAllBytes(original).SequenceEqual(File.ReadAllBytes(file)),"Custom-effect original backup mismatch.");}
+Console.WriteLine("PASS: 36 recovered custom effects, exact backups, variant selection, and idempotency.");
+string recoveredManifestPath=Path.Combine(recoveredRoot,"build","KnownShaders.json");
+var recoveredManifest=JsonSerializer.Deserialize<KnownShaderRepair.Manifest>(File.ReadAllText(recoveredManifestPath))!;
+var oldEntry=recoveredManifest.Effects[0];string ownedSource=Path.Combine(recoveredRoot,oldEntry.Source.Replace('/',Path.DirectorySeparatorChar));
+File.AppendAllText(ownedSource,"\n// Earlier generated template\n");
+recoveredManifest.Effects[0]=oldEntry with {TemplateHash=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(ownedSource)))};
+File.WriteAllText(recoveredManifestPath,JsonSerializer.Serialize(recoveredManifest));
+var upgraded=await KnownShaderRepair.RepairAsync(Path.Combine(recoveredRoot,"Game.csproj"),_=>{},token);
+Require(upgraded.Count(r=>r.Status=="Repaired")==1,"Owned generated source must upgrade.");
+File.AppendAllText(ownedSource,"\n// User edit\n");snapshot=Snapshot(recoveredRoot);
+var edited=await KnownShaderRepair.RepairAsync(Path.Combine(recoveredRoot,"Game.csproj"),_=>{},token);
+Require(edited.Count(r=>r.Status=="Conflict")==1,"Edited source must not be overwritten during upgrade.");Same(snapshot,recoveredRoot);
+Console.WriteLine("PASS: generated template upgrades preserve custom edits.");
+File.WriteAllText(Path.Combine(work,"known-recovered-valid-fixture.txt"),recoveredRoot);

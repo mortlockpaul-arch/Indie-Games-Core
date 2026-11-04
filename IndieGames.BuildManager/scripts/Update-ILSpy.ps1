@@ -19,6 +19,7 @@ $cli = Join-Path $RepoRoot 'ICSharpCode.ILSpyCmd\ICSharpCode.ILSpyCmd.csproj'
 foreach ($project in @($gui,$cli)) {
     if (!(Test-Path -LiteralPath $project)) { throw "Missing project: $project" }
 }
+Set-Location -LiteralPath $RepoRoot
 if (!$SkipUpdate) {
     Run git @('-C',$RepoRoot,'pull','--ff-only')
     Run git @('-C',$RepoRoot,'submodule','update','--init','--recursive')
@@ -37,6 +38,10 @@ function Find-Output([string]$Project,[string]$Name) {
     return $found[0].DirectoryName
 }
 function Deploy([string]$From,[string]$To) {
+    $allowedRoot = [IO.Path]::GetFullPath((Join-Path $ManagerRoot 'src\assets\tools')).TrimEnd('\') + '\'
+    $resolvedTo = [IO.Path]::GetFullPath($To)
+    if (!$resolvedTo.StartsWith($allowedRoot,[StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($resolvedTo) -notin @('ilspy','ilspycmd')) { throw 'Unexpected ILSpy deployment destination.' }
     if (Test-Path $To) {
         if (!$Force) { throw "Destination exists: $To (use -Force)" }
         Remove-Item $To -Recurse -Force
@@ -46,6 +51,36 @@ function Deploy([string]$From,[string]$To) {
     Write-Host "Deployed $To" -ForegroundColor Green
 }
 $tools = Join-Path $ManagerRoot 'src\assets\tools'
-Deploy (Find-Output $gui 'ILSpy.exe') (Join-Path $tools 'ilspy')
-Deploy (Find-Output $cli 'ilspycmd.dll') (Join-Path $tools 'ilspycmd')
+$outputs = @{ ilspy = (Find-Output $gui 'ILSpy.exe'); ilspycmd = (Find-Output $cli 'ilspycmd.dll') }
+
+# Keep the archive copies current: the app removes extracted tool folders after use.
+$sevenZip = Join-Path $ManagerRoot 'src\assets\zip\7z.exe'
+if (!(Test-Path -LiteralPath $sevenZip)) { $sevenZip = 'C:\Program Files\7-Zip\7z.exe' }
+if (!(Test-Path -LiteralPath $sevenZip)) { throw '7-Zip is required to persist updated ILSpy tool archives.' }
+$stage = Join-Path ([IO.Path]::GetTempPath()) ('ilspy-archives-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $stage | Out-Null
+foreach ($name in @('ilspy','ilspycmd')) {
+    $archive = Join-Path $stage ($name + '.7z')
+    Push-Location $outputs[$name]
+    try {
+        $arguments = @('a','-t7z','-mx=5', $archive, '.')
+        if ($name -eq 'ilspy') { $arguments += '-v30m' }
+        Run $sevenZip $arguments
+    } finally { Pop-Location }
+    $backup = Join-Path $stage ($name + '-previous')
+    New-Item -ItemType Directory -Path $backup | Out-Null
+    $toolsPath = [IO.Path]::GetFullPath($tools).TrimEnd('\') + '\'
+    $oldFiles = @(Get-ChildItem -LiteralPath $tools -File | Where-Object { $_.Name -eq "$name.7z" -or $_.Name -match ('^' + $name + '\.7z\.\d+$') })
+    foreach ($old in $oldFiles) {
+        if (!$old.FullName.StartsWith($toolsPath,[StringComparison]::OrdinalIgnoreCase)) { throw 'Archive path outside tools folder.' }
+        Move-Item -LiteralPath $old.FullName -Destination $backup
+    }
+    try {
+        Get-ChildItem -LiteralPath $stage -File | Where-Object { $_.Name -like "$name.7z*" } | Copy-Item -Destination $tools
+    } catch {
+        Get-ChildItem -LiteralPath $backup -File | Copy-Item -Destination $tools -Force
+        throw
+    }
+}
+Write-Host "Archive backups: $stage"
 Write-Host 'ILSpy deployment complete.' -ForegroundColor Green
