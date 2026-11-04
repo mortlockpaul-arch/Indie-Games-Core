@@ -35,7 +35,7 @@ public partial class App : Application
         if(MainWindow is not IndieGames.BuildManager.MainWindow)MainWindow=new MainWindow();
         if(!BackgroundSeeding)ShutdownMode=ShutdownMode.OnMainWindowClose;
         if(BackgroundSeeding && MainWindow.FindName("StopTorrentsButton") is System.Windows.Controls.Button stop)stop.IsEnabled=true;
-        MainWindow.Show();if(MainWindow.WindowState==WindowState.Minimized)MainWindow.WindowState=WindowState.Normal;MainWindow.Activate();
+        MainWindow.Show();if(MainWindow.WindowState==WindowState.Minimized)MainWindow.WindowState=WindowState.Maximized;MainWindow.Activate();
     }
 
     private void StartBackgroundSeeding()
