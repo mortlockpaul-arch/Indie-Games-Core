@@ -121,6 +121,12 @@ Tests:
 Shader implementations are desktop reconstructions of the original contracts, not recovered Xbox HLSL. Full gameplay and other shader fingerprints are outside these component tests.
 ## Portable build and deployment
 
+From the Indie-Games-Core checkout, run this in PowerShell to check and install the required x64 .NET SDK. Approve the installer prompt if Windows asks.
+
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\IndieGames.BuildManager\scripts\Install-BuildManagerSdk.ps1"
+
+Add -CheckOnly to check without installing. The script reads the required SDK from global.json and checks for the .NET Framework 4.8 Developer Pack used by the legacy Steamworks projects. Restart Visual Studio after installing prerequisites.
+
 Build Manager includes its PowerShell scripts and embedded build help in this repository. No separate Python frontend checkout is required to build it. To deliberately use another script checkout, pass `-p:SharedScriptsDirectory=<folder>`.
 
 Publish a self-contained Windows x64 build:
