@@ -113,9 +113,14 @@ internal static class Program
             Console.WriteLine("PASS WPF source dropdown, automatic output/preview, rapid selection changes, all package types and editor reuse");
 
             } var main=new MainWindow { WindowState=WindowState.Normal };
-            var workArea=SystemParameters.WorkArea;
-            if(Math.Abs(main.Width-Math.Clamp(workArea.Width*.8,main.MinWidth,workArea.Width))>1 || Math.Abs(main.Height-Math.Clamp(workArea.Height*.8,main.MinHeight,workArea.Height))>1)
-                throw new Exception("Startup window is not sized to 80% of the desktop work area");
+            if(main.WindowState!=WindowState.Normal)throw new Exception("Startup window should be resizable, not maximized");
+            foreach(var monitor in new[]{(new Rect(0,0,1920,1040),1.0),(new Rect(-2560,0,2560,1400),1.5),(new Rect(0,-2160,3840,2100),2.0)})
+            {
+                var bounds=WindowAppearance.CalculateBounds(monitor.Item1,1000,780,monitor.Item2);
+                if(!monitor.Item1.Contains(bounds) || Math.Abs(bounds.Width-Math.Min(monitor.Item1.Width,Math.Max(1000*monitor.Item2,monitor.Item1.Width*.9)))>1 ||
+                    Math.Abs(bounds.Left+bounds.Width/2-(monitor.Item1.Left+monitor.Item1.Width/2))>1)
+                    throw new Exception("Monitor sizing failed for a secondary monitor/DPI combination");
+            }
             ((TextBox)main.FindName("RootBox")).Text=root;
             main.Show();
             var frame=new DispatcherFrame(); Exception? scanFailure=null; DateTime scanDeadline=DateTime.UtcNow.AddSeconds(20);
@@ -159,6 +164,8 @@ internal static class Program
                 controls.SelectedIndex=1;main.UpdateLayout();
                 if(projectsGrid.ActualHeight<60)throw new Exception("Repairs tab leaves no usable game list");
                 controls.SelectedIndex=0;main.UpdateLayout();
+                if(size.Width==1400 && ((FrameworkElement)main.FindName("OutputRegion")).ActualHeight<230)
+                    throw new Exception("Output/torrent panel should have room for several transfer rows");
             }
             projectsGrid.UnselectAll();
             if(((Button)main.FindName("OpenSelectedFolderButton")).IsEnabled || ((TextBlock)main.FindName("SelectedGameName")).Text!="No game selected")
