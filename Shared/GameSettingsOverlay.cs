@@ -14,7 +14,7 @@ using Drawing = System.Drawing;
 
 namespace IndieGames.Overlay;
 
-public enum OverlayPage { Settings, Info, Logs }
+public enum OverlayPage { Settings, Info, Logs, Games }
 public enum CanvasFilterMode { GameDefault, Nearest, Linear, Integer, Scanlines }
 
 /// <summary>Desktop settings component shared as source between FNA and MonoGame.</summary>
@@ -31,7 +31,7 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     KeyboardState previousKeys;
     MouseState previousMouse;
     int selected, resolutionIndex;
-    int infoScroll, logScroll;
+    int infoScroll, logScroll, gameSelection;
     bool startupLog;
     readonly string cpuName = ReadCpuName();
     readonly string gpuNames = ReadGpuNames();
@@ -45,6 +45,8 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     public OverlayMetrics CurrentMetrics => metrics.Current;
     public void SetCanvasFilter(CanvasFilterMode filter) { GameCanvas.Filter=Enum.IsDefined(filter)?filter:CanvasFilterMode.GameDefault;Save(); }
     public Action<bool>? PauseChanged { get; set; }
+    public IReadOnlyList<(string Title, Action Launch)> Games { get; init; } = Array.Empty<(string, Action)>();
+    public int CurrentGame { get; init; } = -1;
     public string GameTitle { get; set; }
     public GameSettingsOverlay(Game game, GraphicsDeviceManager manager) : base(game)
     {
@@ -100,13 +102,19 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
         if(Game.IsActive && Press(Keys.F2)){DebugHud=!DebugHud;Save();}
         if(Game.IsActive && IsOpen)
         {
-            if(Press(Keys.Tab)){Page=(OverlayPage)(((int)Page+1)%3);infoScroll=logScroll=0;}
+            if(Press(Keys.Tab)){Page=(OverlayPage)(((int)Page+1)%(Games.Count>0?4:3));infoScroll=logScroll=0;}
             if(Page==OverlayPage.Settings)
             {
                 if(Press(Keys.Up))selected=(selected+7)%8;
                 if(Press(Keys.Down))selected=(selected+1)%8;
                 if(Press(Keys.Left))Change(-1);if(Press(Keys.Right))Change(1);
                 if(Press(Keys.Enter))Change(1);
+            }
+            else if(Page==OverlayPage.Games && Games.Count>0)
+            {
+                if(Press(Keys.Up))gameSelection=(gameSelection+Games.Count-1)%Games.Count;
+                if(Press(Keys.Down))gameSelection=(gameSelection+1)%Games.Count;
+                if(Press(Keys.Enter))Games[gameSelection].Launch();
             }
             else
             {
@@ -177,7 +185,26 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     }
     void Text(string text,int x,int y,Color color,float scale=1)
     {
+        DrawText(text,x-1,y,Color.Black,scale);
+        DrawText(text,x+1,y,Color.Black,scale);
+        DrawText(text,x,y-1,Color.Black,scale);
+        DrawText(text,x,y+1,Color.Black,scale);
+        DrawText(text,x,y,color,scale);
+    }
+    void DrawText(string text,int x,int y,Color color,float scale)
+    {
         foreach(char c in text){int code=c>=32&&c<128?c:'?';batch!.Draw(fontTexture,new Vector2(x,y),glyphs[code],color,0,Vector2.Zero,scale,SpriteEffects.None,0);x+=(int)(advances[code]*scale);}
+    }
+    void DrawHint()
+    {
+        const string label = "F1  Settings";
+        const float scale = .9f;
+        int textWidth = label.Sum(c => (int)(advances[c] * scale));
+        int width = textWidth + 24;
+        int x = Math.Max(0,GraphicsDevice.Viewport.Width-width-16);
+        int y = Math.Max(0,GraphicsDevice.Viewport.Height-38);
+        Round(new Rectangle(x,y,width,28),Glass(16,25,40,150));
+        Text(label,x+(width-textWidth)/2,y+4,Color.LightGray,scale);
     }
     void TextFit(string text,int x,int y,Color color,float scale=1,int width=700)
     {
@@ -233,15 +260,18 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
             if(!IsOpen)
             {
                 batch.Begin(SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,DepthStencilState.None,RasterizerState.CullNone);
-                int x=GraphicsDevice.Viewport.Width-156,y=GraphicsDevice.Viewport.Height-38;
-                if(ShowHint){Round(new Rectangle(x,y,140,28),Glass(16,25,40,150));Text("F1  Settings",x+12,y+6,Color.LightGray,.9f);}
+                if(ShowHint)DrawHint();
                 if(DebugHud){Round(new Rectangle(12,12,390,52),Glass(12,20,32,190));TextFit(metrics.Current.Summary,22,21,Color.White,.78f,370);TextFit(metrics.Current.Gpu,22,42,Color.LightSkyBlue,.73f,370);}
                 batch.End();return;
             }
             actions.Clear();batch.Begin(SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,DepthStencilState.None,RasterizerState.CullNone,null,Matrix.CreateScale(Scale)*Matrix.CreateTranslation(Offset.X,Offset.Y,0));
             Round(new Rectangle(7,10,760,510),Glass(0,0,0,95));Round(new Rectangle(0,0,760,510),Glass(15,24,40,225));Rect(new Rectangle(15,0,730,1),Glass(190,225,255,120));
             TextFit(GameTitle,28,20,Color.White,1.25f);Text("GAME SETTINGS",28,57,Color.LightSkyBlue);
-            Button("Settings",new Rectangle(370,48,112,35),()=>Page=OverlayPage.Settings,Page==OverlayPage.Settings);Button("Info",new Rectangle(490,48,104,35),()=>Page=OverlayPage.Info,Page==OverlayPage.Info);Button("Logs",new Rectangle(602,48,132,35),()=>Page=OverlayPage.Logs,Page==OverlayPage.Logs);
+            int tabX = Games.Count>0 ? 326 : 430;
+            Button("Settings",new Rectangle(tabX,48,96,35),()=>Page=OverlayPage.Settings,Page==OverlayPage.Settings);
+            Button("Info",new Rectangle(tabX+104,48,96,35),()=>Page=OverlayPage.Info,Page==OverlayPage.Info);
+            Button("Logs",new Rectangle(tabX+208,48,96,35),()=>Page=OverlayPage.Logs,Page==OverlayPage.Logs);
+            if(Games.Count>0)Button("Games",new Rectangle(tabX+312,48,96,35),()=>Page=OverlayPage.Games,Page==OverlayPage.Games);
             if(Page==OverlayPage.Settings)
             {
             string[] labels={"Resolution", "Display", "Volume", "Canvas scaler / filter", "Small debug HUD"};
@@ -268,6 +298,19 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
             {
                 var lines=InfoLines();infoScroll=Math.Clamp(infoScroll,0,Math.Max(0,lines.Length-11));for(int i=0;i<11&&infoScroll+i<lines.Length;i++)TextFit(lines[infoScroll+i],28,106+i*26,i<3?Color.LightSkyBlue:Color.White,.85f);
                 Button("Save diagnostic report",new Rectangle(26,412,262,38),ExportReport);Text("Up / Down / wheel: more settings",310,425,Color.LightGray,.8f);
+            }
+            else if(Page==OverlayPage.Games)
+            {
+                Text("SELECT A GAME",28,106,Color.LightSkyBlue);
+                int first = Math.Max(0,gameSelection-5);
+                for(int i=first;i<Games.Count && i<first+6;i++)
+                {
+                    int index=i;
+                    string label=Games[index].Title+(index==CurrentGame?" (current)":"");
+                    Button(label,new Rectangle(26,138+(i-first)*46,708,38),
+                        ()=>{gameSelection=index;Games[index].Launch();},index==gameSelection);
+                }
+                Text("Up / Down: choose game | Enter: launch",28,451,Color.LightGray,.85f);
             }
             else
             {

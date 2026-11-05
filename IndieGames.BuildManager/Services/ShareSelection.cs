@@ -44,8 +44,17 @@ public sealed record ShareSelection(string Source, string PlayableGame, string N
             yield return folder;
             foreach (string child in Directory.EnumerateDirectories(folder)) foreach (string item in Folders(child)) yield return item;
         }
-        string playable=Playable(preferred) ? preferred : Folders(Path.Combine(Path.GetDirectoryName(file)!,"bin"))
-            .Where(Playable).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault() ?? preferred;
-        return new(source,playable,Path.GetFileName(source));
+        string name = Path.GetFileName(source);
+        string? playable = Playable(preferred) ? preferred : Folders(Path.Combine(Path.GetDirectoryName(file)!, "bin"))
+            .Where(Playable).OrderByDescending(Directory.GetLastWriteTimeUtc).FirstOrDefault();
+        if (playable is null)
+        {
+            string installed = Path.Combine(storage.Games, name);
+            var manifest = Directory.Exists(installed) ? PortableGames.ReadManifest(installed) : null;
+            if (manifest is not null && name.Equals(manifest.Name, StringComparison.OrdinalIgnoreCase) &&
+                (File.GetAttributes(installed) & FileAttributes.ReparsePoint) == 0 && Playable(installed))
+                playable = installed;
+        }
+        return new(source, playable ?? preferred, name);
     }
 }
