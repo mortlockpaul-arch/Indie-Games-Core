@@ -40,7 +40,7 @@
           <Button x:Name="AddToSolutionButton" Content="Add to solution" Click="AddToSolution_Click" IsEnabled="False"/>
           <Button x:Name="RemoveFromSolutionButton" Content="Remove from solution" Click="RemoveFromSolution_Click" IsEnabled="False" ToolTip="Remove selected project entries from the solution; keep all project and game files"/>
           <Button Content="Settings…" Click="Storage_Click" ToolTip="Configure the solution path and library folders"/>
-         <TextBlock x:Name="SelectedSolutionName" Text="No solution selected" Foreground="#9CA3AF" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="180" Margin="6,0"/>
+         <TextBlock x:Name="SelectedSolutionName" Text="No solution selected" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap" Margin="6,0"/>
         </WrapPanel>
         <Border Background="#182234" BorderBrush="#374151" BorderThickness="1" CornerRadius="8" Padding="6" Margin="3,3,3,0">
          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
