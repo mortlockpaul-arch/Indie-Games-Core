@@ -45,9 +45,29 @@ public sealed class GitHubApi(string credential, HttpMessageHandler? handler = n
             memory.Write(buffer, 0, read);
         }
         if (!response.IsSuccessStatusCode)
-            throw new GitHubApiException(response.StatusCode, $"GitHub returned {(int)response.StatusCode}. " +
-                (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                    ? "Check GitHub sign-in, account permissions and API rate limits." : "Try again, or open My submissions to check whether your request was received."));
+        {
+            string? detail = null;
+            try
+            {
+                using var error = JsonDocument.Parse(memory.ToArray());
+                if (error.RootElement.ValueKind == JsonValueKind.Object &&
+                    error.RootElement.TryGetProperty("message", out var message) &&
+                    message.ValueKind == JsonValueKind.String)
+                {
+                    detail = message.GetString()?.Replace(credential, "[redacted]", StringComparison.Ordinal);
+                }
+            }
+            catch (JsonException) { }
+
+            string operation = $"{method} /{path.TrimStart('/').Split('?')[0]}";
+            string description = string.IsNullOrWhiteSpace(detail)
+                ? "Open My submissions to check whether your request was received."
+                : detail;
+            if (response.Headers.TryGetValues("X-GitHub-Request-Id", out var requestIds))
+                description += $" (GitHub request {string.Join(", ", requestIds)})";
+            throw new GitHubApiException(response.StatusCode,
+                $"GitHub returned {(int)response.StatusCode} for {operation}. {description}");
+        }
         if (memory.Length == 0) return JsonSerializer.SerializeToElement(new { });
         using var document = JsonDocument.Parse(memory.ToArray()); return document.RootElement.Clone();
     }

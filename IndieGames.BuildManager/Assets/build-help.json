@@ -73,7 +73,7 @@
       "sections": [
         {
           "title": "Automatic Startup Checks",
-          "body": "Open Settings → Tools & Updates to see the FNA and ILSpy controls. Checks run in the background when XBLIG Rebuilder starts; they never install anything. The small notice beside the main heading opens this settings page. Offline or failed checks allow retry."
+          "body": "ILSpy checks for source updates in the background when the Python frontend starts. Open Settings → Tools & Updates to see its status or to run a manual FNA update."
         },
         {
           "title": "Installing Updates",
@@ -88,8 +88,12 @@
           "body": "The Torrent Seeding section can start or stop seeding and toggle seeding at Python UI startup. Background mode seeds only verified completed packages from the local package cache; it does not download or install. It uses the same Build Manager instance as the normal UI. Closing Python keeps the seeder running. Open Build Manager to view transfers; closing that window returns it to the background. Stop Seeding, or Stop Torrents in Build Manager, exits background mode. Cached packages remain available."
         },
         {
+          "title": "GitHub Catalogue Publishing",
+          "body": "In Python, open Settings → Tools & Updates and save your token under GitHub Catalogue Publishing. Windows Credential Manager stores it separately from the download token. For a fine-grained token, select Indie-Games-Catalogue and give Contents and Pull requests read and write access. Exit Build Manager from its tray menu, then relaunch it from Python. Connect GitHub validates the saved token. If browser or terminal sign-in fails, use this token setup. After a failed upload, select the existing package in My Catalogue and choose Publish selected. If GitHub returns 403, check repository access and the permissions for the operation named in the log."
+        },
+        {
           "title": "Help Videos",
-          "body": "In XBLIG Rebuilder, Help → Help Videos plays short captioned MP4 walkthroughs using the FFmpeg backend. Choose a topic and press Play; pause and seek controls are available. The updater video uses illustrative responses and does not record live downloads."
+          "body": "Open Help → Help Videos in the Python frontend for short walkthroughs on publishing tokens, tool updates, and finding help. Choose a topic, then use Play, Pause, and the timeline to revisit a step."
         }
       ]
     },

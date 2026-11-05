@@ -256,8 +256,11 @@ public partial class TorrentWindow : Window
     private void MySubmissions_Click(object sender, RoutedEventArgs e) => OpenCatalogueLink(GlobalCatalogue.Website+"/pulls?q=is%3Apr+author%3A%40me");
     private void ReviewSubmissions_Click(object sender, RoutedEventArgs e) => OpenCatalogueLink(GlobalCatalogue.Website+"/pulls");
     private async void ConnectGitHub_Click(object sender, RoutedEventArgs e) => await RunAsync(async token=> {
-        Log("Opening GitHub sign-in. If GitHub CLI is missing, its installer opens first. Complete sign-in in the browser and terminal.");
-        await GitHubAccount.InstallAndSignInAsync(token);
+        if (GitHubAccount.PublishingToken is not { Length: > 0 })
+        {
+            Log("Opening GitHub CLI sign-in. Complete sign-in in the browser and terminal.");
+            await GitHubAccount.InstallAndSignInAsync(token);
+        }
         using var api=new GitHubApi(await GitHubAccount.ReadTokenAsync(token));
         Log("Connected to GitHub as "+await new CataloguePublisher(api).LoginAsync(token)+". You can now publish projects for approval.");
     });

@@ -1,4 +1,6 @@
 using System.Windows;
+using Drawing = System.Drawing;
+using Forms = System.Windows.Forms;
 using System.IO;
 using System.Text.Json;
 using IndieGames.BuildManager.Services;
@@ -6,6 +8,8 @@ namespace IndieGames.BuildManager;
 public partial class App : Application
 {
     private SingleInstanceHost? _instance;
+    private Forms.NotifyIcon? _trayIcon;
+    private System.Drawing.Icon? _trayImage;
     private ProjectTorrentService? _torrents;
     private CancellationTokenSource? _seedCancellation;
     private Task? _seedTask;
@@ -27,8 +31,60 @@ public partial class App : Application
             if(sender is Window window)WindowAppearance.Apply(window);
         }));
         base.OnStartup(e);
+        CreateTrayIcon();
         if(seedOnly)StartBackgroundSeeding();else ShowMainWindow();
     }
+
+    private void CreateTrayIcon()
+    {
+        using var resource = GetResourceStream(new Uri("DashboardIcon.ico", UriKind.Relative)).Stream;
+        using var icon = new System.Drawing.Icon(resource);
+        _trayImage = (System.Drawing.Icon)icon.Clone();
+        var menu = new Forms.ContextMenuStrip
+        {
+            BackColor = Drawing.Color.FromArgb(24, 32, 46),
+            ForeColor = Drawing.Color.FromArgb(229, 231, 235),
+            Font = new Drawing.Font("Segoe UI", 10),
+            Padding = new Forms.Padding(4),
+            ShowImageMargin = false,
+            Renderer = new Forms.ToolStripProfessionalRenderer(new TrayMenuColors())
+        };
+        menu.Items.Add("Open Build Manager", null, (_, _) => Dispatcher.InvokeAsync(ShowMainWindow));
+        menu.Items.Add("Exit Build Manager", null, (_, _) => Dispatcher.InvokeAsync(ExitFromTrayAsync));
+        _trayIcon = new Forms.NotifyIcon
+        {
+            Icon = _trayImage,
+            Text = "Indie Games Build Manager",
+            ContextMenuStrip = menu,
+            Visible = true
+        };
+        _trayIcon.DoubleClick += (_, _) => Dispatcher.InvokeAsync(ShowMainWindow);
+    }
+
+    private sealed class TrayMenuColors : Forms.ProfessionalColorTable
+    {
+        private static readonly Drawing.Color Hover = Drawing.Color.FromArgb(44, 63, 86);
+        public override Drawing.Color MenuItemSelected => Hover;
+        public override Drawing.Color MenuItemBorder => Hover;
+        public override Drawing.Color MenuBorder => Drawing.Color.FromArgb(64, 79, 99);
+    }
+
+    private async Task ExitFromTrayAsync()
+    {
+        if (BackgroundSeeding)
+        {
+            bool wasVisible = MainWindow?.IsVisible == true;
+            await StopBackgroundSeedingAsync();
+            if (!wasVisible)
+                return;
+        }
+
+        if (MainWindow is { } window)
+            window.Close();
+        else
+            Shutdown();
+    }
+
 
     private void ShowMainWindow()
     {

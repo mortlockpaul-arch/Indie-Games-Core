@@ -7,7 +7,13 @@
   <ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Themes/ManagerTheme.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary>
  </Window.Resources>
  <Grid Margin="14">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions>
+   <RowDefinition Height="*" MinHeight="320"/>
+   <RowDefinition Height="8"/>
+   <RowDefinition Height="90" MinHeight="56"/>
+  </Grid.RowDefinitions>
+  <Grid>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel>
    <TextBlock Text="Global Project Catalogue" FontSize="22" FontWeight="SemiBold"/>
    <TextBlock Text="Download or share source and playable Windows games. Closing this window keeps transfers running; monitor them or use Stop Torrents in the main window." TextWrapping="Wrap"/>
@@ -71,6 +77,12 @@
     <TextBlock Text="Connect your GitHub account to publish. The owner reviews each submission before it appears for everyone. Only publish material you have permission to share, and keep Build Manager running to seed it." Foreground="#9CA3AF" TextWrapping="Wrap" Margin="4"/>
    </StackPanel>
   </ContentControl>
-  <TextBox Grid.Row="5" x:Name="StatusBox" IsReadOnly="True" Height="70" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+  </Grid>
+  <GridSplitter Grid.Row="1" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                Background="#334155" Cursor="SizeNS"
+                ToolTip="Drag to resize the catalogue log"
+                AutomationProperties.Name="Resize catalogue log"/>
+  <TextBox Grid.Row="2" x:Name="StatusBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
  </Grid>
 </Window>

@@ -78,7 +78,7 @@ foreach ($file in $files) {
     $relative = $file.FullName.Substring($ContentDirectory.Length).TrimStart('\','/')
     if (-not $PSCmdlet.ShouldProcess($file.FullName, $(if ($Install) { 'Convert audio and install with backups' } else { 'Convert audio to staging directory' }))) { continue }
     try {
-        $directory = Join-Path $work ([IO.Path]::GetDirectoryName($relative))
+        $directory = [IO.Path]::Combine($work, [IO.Path]::GetDirectoryName($relative))
         New-Item -ItemType Directory -Force -Path $directory | Out-Null
         $log = Join-Path $directory ($file.BaseName + '.log')
         # Extractor can report success despite an asset failure: require actual outputs below.
