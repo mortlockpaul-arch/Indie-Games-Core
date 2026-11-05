@@ -50,7 +50,7 @@ public partial class App : Application
             Renderer = new Forms.ToolStripProfessionalRenderer(new TrayMenuColors())
         };
         menu.Items.Add("Open Build Manager", null, (_, _) => Dispatcher.InvokeAsync(ShowMainWindow));
-        menu.Items.Add("Exit Build Manager", null, (_, _) => Dispatcher.InvokeAsync(ExitFromTrayAsync));
+        menu.Items.Add("Exit Build Manager", null, (_, _) => Dispatcher.InvokeAsync(ExitAsync));
         _trayIcon = new Forms.NotifyIcon
         {
             Icon = _trayImage,
@@ -69,7 +69,7 @@ public partial class App : Application
         public override Drawing.Color MenuBorder => Drawing.Color.FromArgb(64, 79, 99);
     }
 
-    private async Task ExitFromTrayAsync()
+    internal async Task ExitAsync()
     {
         if (BackgroundSeeding)
         {

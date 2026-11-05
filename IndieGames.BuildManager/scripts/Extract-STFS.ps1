@@ -247,6 +247,7 @@ try {
             New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
         }
 
+        $folderName = [IO.DirectoryInfo]::new($OutputDir).Name
         foreach ($entry in $entries) {
             $pathParts = @($entry.Name)
             $pi = $entry.PathIndicator
@@ -256,12 +257,13 @@ try {
             }
             $relativePath = $pathParts -join '\'
 
+            $displayPath = Join-Path $folderName $relativePath
             if ($entry.IsDirectory) {
                 $dirPath = Join-Path $OutputDir $relativePath
                 if (-not (Test-Path $dirPath)) {
                     New-Item -ItemType Directory -Path $dirPath -Force | Out-Null
                 }
-                Write-Host "  DIR:  $relativePath"
+                Write-Host "  DIR:  $displayPath"
             } else {
                 $filePath = Join-Path $OutputDir $relativePath
                 $fileDir = Split-Path $filePath -Parent
@@ -269,7 +271,7 @@ try {
                     New-Item -ItemType Directory -Path $fileDir -Force | Out-Null
                 }
 
-                Write-Host "  FILE: $relativePath ($($entry.FileSize) bytes)"
+                Write-Host ("  FILE: {0} ({1:N0} bytes)" -f $displayPath, $entry.FileSize)
 
                 $outStream = [System.IO.File]::Create($filePath)
                 try {

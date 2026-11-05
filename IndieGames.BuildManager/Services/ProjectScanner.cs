@@ -1,4 +1,7 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 using IndieGames.BuildManager.Models;
 namespace IndieGames.BuildManager.Services;
@@ -6,60 +9,124 @@ namespace IndieGames.BuildManager.Services;
 public sealed record ProjectScanProgress(int FoldersScanned, int TotalFolders, int ProjectsFound, string Folder, bool Discovering);
 public static class ProjectScanner
 {
-    public static List<GameProject> Scan(string root, CancellationToken token=default, IProgress<ProjectScanProgress>? progress=null)
+    public static List<GameProject> Scan(string root, CancellationToken token=default, IProgress<ProjectScanProgress>? progress=null, string? cacheDirectory=null)
     {
         if (!Directory.Exists(root)) return [];
-        var folders=new List<string>(); var pending=new Stack<string>(); pending.Push(Path.GetFullPath(root));
-        long last=0;
-        void Report(ProjectScanProgress value, bool force=false)
-        {
-            long now=Environment.TickCount64;
-            if (force || now-last>=100) { progress?.Report(value); last=now; }
-        }
-        while (pending.TryPop(out string? folder))
-        {
-            token.ThrowIfCancellationRequested();
-            if ((File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0) continue;
-            folders.Add(folder);
-            Report(new(0,folders.Count,0,folder,true));
-            foreach (string child in Directory.EnumerateDirectories(folder))
-                if (Path.GetFileName(child) is not ("obj" or "bin" or ".git" or ".vs")) pending.Push(child);
-        }
-        var result=new List<GameProject>();
-        Report(new(0,folders.Count,0,root,false),true);
-        for (int i=0;i<folders.Count;i++)
+        var rootDirectory = new DirectoryInfo(root);
+        string? cachePath = cacheDirectory is null ? null : Path.Combine(cacheDirectory,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rootDirectory.FullName.ToUpperInvariant()))) + ".json");
+        var cached = ReadCache(cachePath);
+        var current = new Dictionary<string, CachedProject>(StringComparer.OrdinalIgnoreCase);
+        var pending = new Stack<DirectoryInfo>();
+        var result = new List<GameProject>();
+        pending.Push(rootDirectory);
+        int foldersScanned = 0;
+        long lastReport = 0;
+        while (pending.TryPop(out var folder))
         {
             token.ThrowIfCancellationRequested();
-            foreach (string file in Directory.EnumerateFiles(folders[i],"*.csproj"))
+            if ((folder.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            foreach (var entry in folder.EnumerateFileSystemInfos())
             {
                 token.ThrowIfCancellationRequested();
+                if (entry is DirectoryInfo child)
+                {
+                    if (child.Name is not ("obj" or "bin" or ".git" or ".vs")) pending.Push(child);
+                    continue;
+                }
+                if (entry is not FileInfo project || !project.Extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)) continue;
+                string file = project.FullName;
                 try
                 {
-                    var doc=XDocument.Load(file);
-                    string Read(string name) {
-                        var saved = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "PropertyGroup" &&
-                            (string?)e.Attribute("Label") == ProjectArchitectureUpdater.Label)?
-                            .Elements().FirstOrDefault(e => e.Name.LocalName == name);
-                        return saved?.Value.Trim() ?? string.Join("; ",doc.Descendants().Where(e=>e.Name.LocalName==name).Select(e=>e.Value.Trim()).Where(v=>v.Length>0).Distinct());
-                    }
-                    result.Add(new GameProject {
-                        Name=Path.GetFileNameWithoutExtension(file),Path=file,IconPath=FindIcon(file, doc),
-                        TargetFramework=Read("TargetFrameworks") is { Length:>0 } multi ? multi : Read("TargetFramework"),
-                        PlatformTarget=Read("PlatformTarget"),Platforms=Read("Platforms"),
-                        RuntimeIdentifier=Read("RuntimeIdentifiers") is { Length:>0 } ris ? ris : Read("RuntimeIdentifier"),OutputType=Read("OutputType") });
+                    var modified = project.LastWriteTimeUtc;
+                    long length = project.Length;
+                    if (!cached.TryGetValue(file, out var metadata) || metadata.Modified != modified || metadata.Length != length)
+                        metadata = ReadProject(file, modified, length);
+                    current[file] = metadata;
+                    result.Add(new GameProject
+                    {
+                        Name = Path.GetFileNameWithoutExtension(file),
+                        Path = file,
+                        IconPath = FindIcon(file, metadata.Icons),
+                        TargetFramework = metadata.TargetFramework,
+                        PlatformTarget = metadata.PlatformTarget,
+                        Platforms = metadata.Platforms,
+                        RuntimeIdentifier = metadata.RuntimeIdentifier,
+                        OutputType = metadata.OutputType
+                    });
                 }
                 catch (System.Xml.XmlException) { }
             }
-            Report(new(i+1,folders.Count,result.Count,folders[i],false),i==folders.Count-1);
+            foldersScanned++;
+            long now = Environment.TickCount64;
+            if (now - lastReport >= 100)
+            {
+                progress?.Report(new(foldersScanned, foldersScanned + pending.Count, result.Count, folder.FullName, true));
+                lastReport = now;
+            }
         }
+        token.ThrowIfCancellationRequested();
+        if (cachePath is not null && (current.Count != cached.Count ||
+            current.Any(pair => !cached.TryGetValue(pair.Key, out var previous) || !ReferenceEquals(pair.Value, previous))))
+            WriteCache(cachePath, current);
+        progress?.Report(new(foldersScanned, foldersScanned, result.Count, rootDirectory.FullName, false));
         return result.OrderBy(p=>p.Name,StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private static string FindIcon(string project, XDocument document)
+    private sealed record CachedProject(DateTime Modified, long Length, string TargetFramework,
+        string PlatformTarget, string Platforms, string RuntimeIdentifier, string OutputType, string[] Icons);
+
+    private static Dictionary<string, CachedProject> ReadCache(string? path)
+    {
+        if (path is not null && File.Exists(path))
+        {
+            try
+            {
+                var entries = JsonSerializer.Deserialize<Dictionary<string, CachedProject>>(File.ReadAllBytes(path));
+                if (entries is not null) return new(entries, StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
+        }
+        return new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void WriteCache(string path, Dictionary<string, CachedProject> entries)
+    {
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(entries));
+            File.Move(temporary, path, true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    private static CachedProject ReadProject(string file, DateTime modified, long length)
+    {
+        var doc = XDocument.Load(file);
+        var saved = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "PropertyGroup" &&
+            (string?)e.Attribute("Label") == ProjectArchitectureUpdater.Label);
+        string Read(string name) => saved?.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value.Trim()
+            ?? string.Join("; ", doc.Descendants().Where(e => e.Name.LocalName == name)
+                .Select(e => e.Value.Trim()).Where(v => v.Length > 0).Distinct());
+        var icons = doc.Descendants().Where(e => e.Name.LocalName == "ApplicationIcon").Select(e => e.Value.Trim()).ToArray();
+        return new(modified, length,
+            Read("TargetFrameworks") is { Length: > 0 } multi ? multi : Read("TargetFramework"),
+            Read("PlatformTarget"), Read("Platforms"),
+            Read("RuntimeIdentifiers") is { Length: > 0 } ris ? ris : Read("RuntimeIdentifier"),
+            Read("OutputType"), icons);
+    }
+
+    private static string FindIcon(string project, string[] icons)
     {
         string folder = Path.GetDirectoryName(project)!;
-        var candidates = document.Descendants().Where(e => e.Name.LocalName == "ApplicationIcon")
-            .Select(e => e.Value.Trim().Replace("$(MSBuildProjectDirectory)", folder))
+        var candidates = icons.Select(value => value.Replace("$(MSBuildProjectDirectory)", folder))
             .Where(value => value.Length > 0 && !value.Contains("$(", StringComparison.Ordinal))
             .Concat(new[] { "DashboardIcon.ico", "app.ico", "Game.ico", "icon.ico" });
         foreach (string candidate in candidates)

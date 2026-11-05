@@ -101,17 +101,18 @@ public static void ScanXnaReferences(string folder)
         string root=RootBox.Text.Trim();
         _projects.Clear();
         FolderScanProgress.IsIndeterminate=true; FolderScanProgress.Value=0; CancelScanButton.IsEnabled=true;
-        FolderScanStatus.Text="Finding Folders…";
+        FolderScanStatus.Text="Scanning Folders…";
         var progress=new Progress<ProjectScanProgress>(p=> {
             if (_scanCts != scan || scan.IsCancellationRequested) return;
             FolderScanProgress.IsIndeterminate=p.Discovering;
             FolderScanProgress.Maximum=Math.Max(1,p.TotalFolders); FolderScanProgress.Value=p.FoldersScanned;
-            FolderScanStatus.Text=p.Discovering ? $"Finding Folders… {p.TotalFolders:N0} Found" : $"Scanning Folders: {p.FoldersScanned:N0} / {p.TotalFolders:N0} · {p.ProjectsFound:N0} Projects";
+            FolderScanStatus.Text=p.Discovering ? $"Scanning Folders… {p.FoldersScanned:N0} Scanned · {p.ProjectsFound:N0} Projects" : $"Scanning Folders: {p.FoldersScanned:N0} / {p.TotalFolders:N0} · {p.ProjectsFound:N0} Projects";
             FolderScanStatus.ToolTip=p.Folder;
         });
         try
         {
-            var projects=await Task.Run(()=>ProjectScanner.Scan(root,scan.Token,progress));
+            string scanCache = Path.Combine(Path.GetDirectoryName(LibraryStorage.SettingsPath)!, "project-scan-v1");
+            var projects=await Task.Run(()=>ProjectScanner.Scan(root,scan.Token,progress,scanCache));
             if (_scanCts != scan || scan.IsCancellationRequested) return;
             foreach (var project in projects) _projects.Add(project);
             await RefreshSolutionMembershipAsync(true);
@@ -124,6 +125,23 @@ public static void ScanXnaReferences(string folder)
     }
     private void CancelScan_Click(object sender, RoutedEventArgs e) => _scanCts?.Cancel();
     private void Scan_Click(object sender, RoutedEventArgs e) => Scan();
+
+    private void Quit_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = button;
+            menu.IsOpen = true;
+        }
+    }
+
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
+
+    private async void FullShutdown_Click(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current is App app)
+            await app.ExitAsync();
+    }
 
     private async void InstallGameLoggerButton_Click(object sender, RoutedEventArgs e)
     {
