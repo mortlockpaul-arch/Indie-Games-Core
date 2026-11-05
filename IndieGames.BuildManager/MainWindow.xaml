@@ -170,7 +170,7 @@
      <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="#374151" ToolTip="Drag to resize the game list and build output / torrents"/>
      <DockPanel x:Name="OutputRegion" Grid.Row="2">
        <StackPanel DockPanel.Dock="Top">
-         <DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="View Torrents" Click="ViewTorrents_Click"/><Button x:Name="StopTorrentsButton" Content="Stop Torrents" Click="StopTorrents_Click" IsEnabled="False"/></WrapPanel><TextBlock x:Name="TorrentSummary" Text="No Active Torrents" Foreground="#93C5FD" TextWrapping="Wrap" Margin="4"/></DockPanel>
+         <DockPanel><WrapPanel DockPanel.Dock="Right"><Button x:Name="StartTorrentsButton" Content="Start / resume torrents" Click="StartTorrents_Click" Background="#2563EB" ToolTip="Resume saved downloads and seed local packages. If nothing is saved, open the catalogue to choose a project."/><Button Content="Catalogue…" Click="TorrentCatalogue_Click"/><Button x:Name="StopTorrentsButton" Content="Stop torrents" Click="StopTorrents_Click" IsEnabled="False"/></WrapPanel><TextBlock x:Name="TorrentSummary" Text="No Active Torrents" Foreground="#93C5FD" TextWrapping="Wrap" Margin="4"/></DockPanel>
          <TextBlock x:Name="TorrentActivity" Foreground="#9CA3AF" Margin="4,0,4,4" TextTrimming="CharacterEllipsis"/>
        </StackPanel>
        <TabControl x:Name="OutputTabs">

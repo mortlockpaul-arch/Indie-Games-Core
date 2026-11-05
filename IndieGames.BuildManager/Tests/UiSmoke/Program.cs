@@ -113,6 +113,8 @@ internal static class Program
             Console.WriteLine("PASS WPF source dropdown, automatic output/preview, rapid selection changes, all package types and editor reuse");
 
             } var main=new MainWindow { WindowState=WindowState.Normal };
+            if(main.FindName("StartTorrentsButton") is not Button startButton || !startButton.IsEnabled || !startButton.Content.ToString()!.Contains("resume"))
+                throw new Exception("Main window should offer a direct start/resume action");
             if(main.WindowState!=WindowState.Normal)throw new Exception("Startup window should be resizable, not maximized");
             foreach(var monitor in new[]{(new Rect(0,0,1920,1040),1.0),(new Rect(-2560,0,2560,1400),1.5),(new Rect(0,-2160,3840,2100),2.0)})
             {

@@ -197,7 +197,7 @@ public partial class TorrentWindow : Window
             bool installed = Directory.Exists(Path.Combine(row.Project.PackageKind == "Game" ? GamesBox.Text : ArchiveBox.Text,row.Project.FolderName));
             text = installed ? row.Project.PackageKind == "Game" ? "Installed game: choose Run installed game to play." : "Source is available in the source archive. Open the main window to build it." :
                 transfer?.Manager.Complete == true ? "Download complete. Choose Verify and install; playable games can then be launched with Run installed game." :
-                "Choose Download / Resume, wait for 100%, then Verify and install. Source files require building before they can run.";
+                "Choose Start selected, wait for 100%, then Verify and install. Source files require building before they can run.";
             text = $"{row.KindLabel} · Created {row.Project.CreatedUtc.ToLocalTime():dd MMM yyyy HH:mm:ss} · Snapshot {row.Project.SnapshotDisplay} · {row.Project.FileCount:N0} files\n" + text;
             if (_rows.Count(r => r.Project.Name.Equals(row.Project.Name, StringComparison.OrdinalIgnoreCase) && r.Project.PackageKind == row.Project.PackageKind) > 1)
                 text += "\nMore than one snapshot exists for this package type. Select two and choose Compare snapshots to see file differences.";
@@ -433,8 +433,20 @@ public partial class TorrentWindow : Window
             _preview=null; CreateShareButton.IsEnabled=false; ShareSummary.Text="Submitted for approval — seeding";
         });
     }
+    public async Task<int> StartSavedTorrentsAsync()
+    {
+        if(_operation!=null)throw new InvalidOperationException("Wait for the current operation to finish, then choose Start / resume torrents.");
+        int started=-1;
+        await RunAsync(async token=> { ConfigureNetwork();started=await _service.StartSavedTransfersAsync(Log,token); });
+        return started;
+    }
+    private async void StartSaved_Click(object sender,RoutedEventArgs e)
+    {
+        try { await StartSavedTorrentsAsync(); }
+        catch(Exception error) { Log(error.GetBaseException().Message); }
+    }
     private async void Download_Click(object sender, RoutedEventArgs e)
-        => await RunAsync(async token => { ConfigureNetwork(); foreach(var row in SelectedRows()) { await _service.StartAsync(row.Project, seed: false, token); Log($"Download started: {row.Project.Name} ({row.Project.PackageKind}). Use Verify and install when complete."); } });
+        => await RunAsync(async token => { ConfigureNetwork(); foreach(var row in SelectedRows()) { await _service.StartAsync(row.Project, seed: false, token); Log($"Started: {row.Project.Name} ({row.Project.PackageKind}). Complete packages seed automatically; downloads can be verified and installed when finished."); } });
 
     private async void CompareSnapshots_Click(object sender, RoutedEventArgs e)
     {
@@ -486,7 +498,7 @@ public partial class TorrentWindow : Window
         catch(Exception error) { Log(error.Message); }
     }
     private async void Pause_Click(object sender, RoutedEventArgs e)
-        => await RunAsync(async _ => { foreach(var row in SelectedRows()) await TransferFor(row).Manager.PauseAsync(); Log("Transfer paused. Download / resume restarts it."); });
+        => await RunAsync(async _ => { foreach(var row in SelectedRows()) await TransferFor(row).Manager.PauseAsync(); Log("Transfer paused. Start selected restarts it."); });
     private async void Stop_Click(object sender, RoutedEventArgs e)
         => await RunAsync(async _ => { foreach(var row in SelectedRows()) await TransferFor(row).Manager.StopAsync(); Log("Transfer stopped. Cached files remain available for resume."); });
     private async void Install_Click(object sender, RoutedEventArgs e)

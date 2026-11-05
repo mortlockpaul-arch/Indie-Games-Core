@@ -168,9 +168,9 @@ public static void ScanXnaReferences(string folder)
         OpenTorrentManager();
     }
 
-    private TorrentWindow OpenTorrentManager()
+    private TorrentWindow OpenTorrentManager(bool show = true)
     {
-        if (_torrentWindow != null) { _torrentWindow.Show(); if(_torrentWindow.WindowState==WindowState.Minimized)_torrentWindow.WindowState=WindowState.Normal; _torrentWindow.Activate(); return _torrentWindow; }
+        if (_torrentWindow != null) { if(show) { _torrentWindow.Show(); if(_torrentWindow.WindowState==WindowState.Minimized)_torrentWindow.WindowState=WindowState.Normal; _torrentWindow.Activate(); } return _torrentWindow; }
         string root = Path.GetFullPath(RootBox.Text.Trim());
         string? folder = Selected().FirstOrDefault() is { } project ? Path.GetDirectoryName(Path.GetFullPath(project.Path)) : null;
         string prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
@@ -182,7 +182,7 @@ public static void ScanXnaReferences(string folder)
         _torrentWindow.StatusChanged += UpdateTorrentStatus;
         _torrentWindow.Closed += (_, _) => { _torrentWindow = null; StopTorrentsButton.IsEnabled=false; };
         StopTorrentsButton.IsEnabled=true;
-        _torrentWindow.Show();
+        if(show)_torrentWindow.Show();
         return _torrentWindow;
     }
 
@@ -194,6 +194,18 @@ public static void ScanXnaReferences(string folder)
         TorrentTransfersGrid.ItemsSource=snapshot.Transfers;
     }
     private void ViewTorrents_Click(object sender, RoutedEventArgs e) => OutputTabs.SelectedIndex=1;
+    private async void StartTorrents_Click(object sender, RoutedEventArgs e)
+    {
+        StartTorrentsButton.IsEnabled=false;
+        OutputTabs.SelectedIndex=1;
+        try
+        {
+            var manager=OpenTorrentManager(show:false);
+            if(await manager.StartSavedTorrentsAsync()==0)OpenTorrentManager();
+        }
+        catch(Exception error) { TorrentActivity.Text=error.GetBaseException().Message;Log(error.GetBaseException().Message); }
+        finally { StartTorrentsButton.IsEnabled=true; }
+    }
     private async void StopTorrents_Click(object sender, RoutedEventArgs e)
     {
         if(Application.Current is App {BackgroundSeeding:true} app)

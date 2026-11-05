@@ -16,6 +16,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
     private ClientEngine? _engine;
     private readonly EngineSettings? _settings;
     private readonly SemaphoreSlim _shareGate = new(1, 1);
+    private readonly HashSet<string> _rememberedHashes = new(StringComparer.OrdinalIgnoreCase);
     public int ListenPort { get; set; } = 6881;
     public bool AllowPortForwarding { get; set; }
     public bool NetworkStarted => _engine != null;
@@ -150,11 +151,12 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         if (existing != null)
         {
             if (seed && !existing.Manager.Complete) throw new InvalidOperationException("Finish downloading this package before seeding it.");
+            await RememberProjectAsync(project, token);
             await existing.Manager.StartAsync(); return existing;
         }
         string own = Path.Combine(StateDirectory, "shares", project.Id, project.PackageName);
         string downloaded = Path.Combine(StateDirectory, "downloads", project.InfoHash.ToLowerInvariant(), project.PackageName);
-        string package = seed && File.Exists(own) ? own : downloaded;
+        string package = File.Exists(own) ? own : downloaded;
         if (seed)
         {
             if (!File.Exists(package)) throw new FileNotFoundException("No cached package for this project. Download it first or create its share here.");
@@ -166,6 +168,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         long remaining = project.PackageBytes - (File.Exists(package) ? new FileInfo(package).Length : 0);
         if (!seed && new DriveInfo(Path.GetPathRoot(package)!).AvailableFreeSpace < remaining + 1024 * 1024)
             throw new IOException("Not enough free space for this download in the torrent cache.");
+        await RememberProjectAsync(project, token);
         var manager = await Engine.AddAsync(torrent, Path.GetDirectoryName(package)!, new TorrentSettingsBuilder { MaximumConnections = 40 }.ToSettings());
         var transfer = new ProjectTransfer(project, manager, package);
         Transfers.Add(transfer);
@@ -182,6 +185,38 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         return transfer;
     }
 
+    private async Task RememberProjectAsync(TorrentProject project, CancellationToken token)
+    {
+        await _shareGate.WaitAsync(token);
+        try
+        {
+            if(_rememberedHashes.Contains(project.InfoHash))return;
+            var catalogue=File.Exists(LocalCataloguePath) ? await TorrentCatalogue.LoadAsync(LocalCataloguePath,token) : new TorrentCatalogue();
+            _rememberedHashes.UnionWith(catalogue.Projects.Select(p=>p.InfoHash));
+            if(catalogue.Projects.Any(p=>p.InfoHash.Equals(project.InfoHash,StringComparison.OrdinalIgnoreCase)))return;
+            catalogue.Projects.Add(project);
+            await catalogue.SaveAsync(LocalCataloguePath,token);
+            _rememberedHashes.Add(project.InfoHash);
+        }
+        finally { _shareGate.Release(); }
+    }
+
+    public async Task<int> StartSavedTransfersAsync(Action<string> log, CancellationToken token)
+    {
+        var catalogue=File.Exists(LocalCataloguePath) ? await TorrentCatalogue.LoadAsync(LocalCataloguePath,token) : new TorrentCatalogue();
+        var projects=catalogue.Projects.Concat(Transfers.Select(t=>t.Project)).DistinctBy(p=>p.InfoHash,StringComparer.OrdinalIgnoreCase).ToArray();
+        int started=0;
+        foreach(var project in projects)
+        {
+            token.ThrowIfCancellationRequested();
+            try { await StartAsync(project,false,token);started++;log("Started / resumed: "+project.Name); }
+            catch(Exception error) when(error is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+            { log("Could not start "+project.Name+": "+error.Message); }
+        }
+        log(started==0 ? "No saved transfers started. Open the catalogue, select a package, and choose Start selected." : $"Started / resumed {started} torrent(s). Complete packages seed automatically.");
+        return started;
+    }
+
     public async Task<int> SeedLocalCatalogueAsync(Action<string> log, CancellationToken token)
     {
         if(!File.Exists(LocalCataloguePath)){log("No saved local catalogue. No transfers started.");return 0;}
@@ -191,7 +226,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         {
             token.ThrowIfCancellationRequested();
             try {await StartAsync(project,true,token);started++;log("Seeding: "+project.Name);}
-            catch(Exception error) when(error is IOException or InvalidOperationException or ArgumentException)
+            catch(Exception error) when(error is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
             {log("Skipped "+project.Name+": "+error.Message);}
         }
         log($"Seeding {started} completed local package(s).");return started;
@@ -212,7 +247,10 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         // Remove only this torrent identity: different snapshots may have the same display name.
         // Packages, resume data, source folders and installed games are deliberately retained.
         if (!keepLocalMetadata && catalogue != null && catalogue.Projects.RemoveAll(p => p.InfoHash.Equals(project.InfoHash, StringComparison.OrdinalIgnoreCase)) > 0)
+        {
             await catalogue.SaveAsync(LocalCataloguePath, CancellationToken.None);
+            _rememberedHashes.Remove(project.InfoHash);
+        }
     }
 
     public async Task<string> InstallAsync(ProjectTransfer transfer, string archiveRoot, CancellationToken token)

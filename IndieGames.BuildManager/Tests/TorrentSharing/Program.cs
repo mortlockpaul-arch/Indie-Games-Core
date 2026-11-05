@@ -157,6 +157,35 @@ var snapshot=new TorrentStatusSnapshot([new("One","Source","Seeding",100,2,0,204
 if(!snapshot.Summary.Contains("1 Seeding") || !snapshot.Summary.Contains("1 Downloading") || snapshot.Transfers.Sum(t=>t.UploadRate)!=2048)throw new Exception("Torrent summary aggregation failed");
 Console.WriteLine("PASS live transfer status, package labels and aggregate torrent summary");
 
+string resumeRoot=Path.Combine(root,"one-click-resume");
+await using(var initial=new ProjectTorrentService(resumeRoot,Settings("resume-initial",Port())))
+{
+    var pending=await initial.StartAsync(entry,false,token);
+    await pending.Manager.StopAsync();
+    if(!(await TorrentCatalogue.LoadAsync(initial.LocalCataloguePath,token)).Projects.Any(p=>p.InfoHash==entry.InfoHash))throw new Exception("Started download metadata was not retained");
+    if(await initial.SeedLocalCatalogueAsync(_=>{},token)!=0)throw new Exception("Seed-only mode must skip unfinished saved downloads");
+}
+await using(var resumed=new ProjectTorrentService(resumeRoot,Settings("resume-restarted",Port())))
+{
+    if(await resumed.StartSavedTransfersAsync(_=>{},token)!=1)throw new Exception("One-click restart did not restore the saved download");
+    var transfer=resumed.Transfers.Single();
+    while(transfer.Manager.State!=TorrentState.Downloading){token.ThrowIfCancellationRequested();await Task.Delay(50,token);}
+    await transfer.Manager.AddPeerAsync(new PeerInfo(new Uri("ipv4://127.0.0.1:"+seedPort)));
+    while(!transfer.Manager.Complete){token.ThrowIfCancellationRequested();await Task.Delay(100,token);}
+    await transfer.Manager.PauseAsync();
+    if(await resumed.StartSavedTransfersAsync(_=>{},token)!=1 || resumed.Transfers.Count!=1)throw new Exception("Resuming duplicated the torrent");
+}
+await using(var completed=new ProjectTorrentService(resumeRoot,Settings("resume-completed",Port())))
+{
+    if(await completed.StartSavedTransfersAsync(_=>{},token)!=1)throw new Exception("Completed download was not restored for seeding");
+    while(completed.Transfers[0].Manager.State!=TorrentState.Seeding){token.ThrowIfCancellationRequested();await Task.Delay(50,token);}
+}
+await using(var emptyService=new ProjectTorrentService(Path.Combine(root,"empty-start"),Settings("empty-start",Port())))
+{
+    if(await emptyService.StartSavedTransfersAsync(_=>{},token)!=0 || emptyService.NetworkStarted)throw new Exception("Empty startup should not launch unrelated torrents");
+}
+Console.WriteLine("PASS one-click restart, persisted download metadata, real transfer after app restart, completed seeding, duplicate prevention and empty startup");
+
 sealed class InlineProgress<T>(Action<T> report) : IProgress<T> { public void Report(T value)=>report(value); }
 
 

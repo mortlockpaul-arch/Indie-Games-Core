@@ -70,7 +70,7 @@ Existing local shares remain visible as **Local · not submitted** and can be mi
 
 ### Download and install
 
-Select an approved package and choose **Download / Resume**, then **Verify And Install** once complete. Torrent pieces and ZIP SHA-256 are checked before extraction. Paths, sizes and contents are validated; existing destination folders are never overwritten. Source goes to the configured archive; playable builds go to the games folder. Installation never runs code automatically. **Run Installed Game** launches a selected playable package. Source may need the usual shared-framework configuration before building.
+Select an approved package and choose **Start selected**, then **Verify And Install** once complete. Torrent pieces and ZIP SHA-256 are checked before extraction. Paths, sizes and contents are validated; existing destination folders are never overwritten. Source goes to the configured archive; playable builds go to the games folder. Installation never runs code automatically. **Run Installed Game** launches a selected playable package. Source may need the usual shared-framework configuration before building.
 
 **Pause** and **Stop** preserve cached data for resume. Closing the catalogue hides it while transfers continue; **Stop Torrents** or exiting Build Manager stops the client. **Remove Selected** hides entries on this PC and stops their transfers while retaining files. It never removes global entries. **Show hidden packages** restores the local view. Retiring a public entry requires an owner-reviewed change in the catalogue repository.
 
@@ -101,7 +101,7 @@ BuildManager build/restore/clean/rebuild actions inject the shipped `BuildManage
 
 In the torrent window choose **Source**, **Playable game**, or **Both** before **Preview files**. The source folder is the original archive project; the game folder is its built Windows output (prefilled for the selected project). Build the game first. A playable package includes executable, Content, dependencies, and runtime metadata, while excluding source, PDBs, development runtime configuration, backups and generated build folders. Its entry point must have matching `.runtimeconfig.json` and `.deps.json`; framework-dependent builds still require the matching .NET runtime on the recipient's PC.
 
-**Both** creates two independent catalogue entries labelled **Source** and **Game**. Ctrl/Shift-select either or both rows and choose **Download / resume**. When complete, **Verify and install** routes Source to the archive and Game to the games folder. Existing destinations are refused. Game packages do not require a `.csproj`. Select a Game entry and click **Run installed game**, or use **Open games folder**. Installing never automatically executes a game. Older catalogues without a package kind load as Source.
+**Both** creates two independent catalogue entries labelled **Source** and **Game**. Ctrl/Shift-select either or both rows and choose **Start selected**. When complete, **Verify and install** routes Source to the archive and Game to the games folder. Existing destinations are refused. Game packages do not require a `.csproj`. Select a Game entry and click **Run installed game**, or use **Open games folder**. Installing never automatically executes a game. Older catalogues without a package kind load as Source.
 
 Run `./Tests/TorrentSharing/BuildLayout.Integration.ps1` to check two identically named synthetic game projects sharing one dependency. It verifies central intermediate files, direct game outputs, Content/native post-build copies, executable launch, and absence of source `bin`/`obj`. Pass `-ArtifactRoot <new-folder>` to keep the fixtures in a chosen location.
 
@@ -131,3 +131,7 @@ dotnet publish IndieGames.BuildManager/IndieGames.BuildManager.csproj -c Release
 ```
 
 Deploy the complete publish folder to the Python frontend's `src/assets/tools/build_manager` folder. The manager itself includes the .NET runtime; building game projects still requires their SDKs and targeting packs. Close Build Manager before replacing the deployed files.
+
+## One-click torrents (1.1.3)
+
+Choose **Start / resume torrents** in the main window to resume saved downloads and seed local packages. Transfers appear in the bottom Torrents tab without opening the catalogue. If no transfers are saved, the catalogue opens so you can select a package and choose **Start selected**. This same action automatically seeds complete cached packages or downloads missing pieces. Downloads are remembered for restart; verification and installation remain separate. No new catalogue projects are automatically downloaded, and publishing still requires approval. **Stop torrents** stops all transfers while retaining their cached files and saved metadata.
