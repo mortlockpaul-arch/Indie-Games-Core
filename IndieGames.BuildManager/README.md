@@ -1,6 +1,8 @@
 # Indie Games Build Manager (WPF, .NET 10)
 
-A starter desktop application for discovering game projects and diagnosing configuration/platform mismatches.
+A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.3**.
+
+The separately distributed [Python frontend](https://pmortlock.itch.io/xenia-game-manager) handles extraction and ILSpy decompilation and launches Build Manager. Both use the same recovered project folders. See the [repository overview and setup guide](../README.md) for the complete workflow.
 
 ## Run
 
@@ -12,7 +14,7 @@ From the repository root:
 ```powershell
 dotnet run --project .\IndieGames.BuildManager\IndieGames.BuildManager.csproj
 ```
-Requires Windows and .NET 10 SDK.
+Requires Windows and the SDK selected by `global.json` (currently 10.0.401, with compatible feature-band patches allowed). A runtime alone is insufficient for source builds. Initialize Git submodules before building.
 
 ## Current capabilities
 - Recursively discovers .csproj files in the selected archive folder.
@@ -22,21 +24,18 @@ Requires Windows and .NET 10 SDK.
 - Lets you independently set `Platform` (MSBuild project/solution configuration) and `PlatformTarget` (compiler target).
 - Allows optional target framework/runtime overrides, and an optional full Visual Studio MSBuild.exe path.
 - Captures output and supports cancellation.
+- Repairs supported references/content, including known shaders, and launches built games for testing.
+- Configures separate source archive, playable game, build cache and torrent folders.
+- Loads the global catalogue automatically and submits packages for owner approval.
+- Starts/resumes saved torrent transfers and downloads or seeds selected packages; verification and installation are separate actions.
+- Provides resizable output/transfer panels and monitor-aware window placement.
 
 ## Important
 - The default platform values are editable; do not assume x64 is valid for every legacy project.
 - A project's declared XML properties can differ from evaluated MSBuild properties. Use **Inspect properties** for diagnosis.
 - Project-specific `Directory.Build.props`, conditions, and solution configuration mappings may override or conflict with your choices.
 - For legacy .NET Framework projects, use Visual Studio MSBuild and the relevant targeting packs.
-- PowerShell fixer support is a placeholder: the current button runs the chosen script **without arguments**, because existing scripts have different parameter contracts. Do not run a fixer until its parameters are wired correctly.
-- No project files are modified automatically by this application. Builds/restore and user-selected scripts can still change generated files or project files respectively.
-
-## Next iteration
-- Parse .sln/.slnx configuration mappings, evaluate all platform/configuration pairs.
-- Add per-project saved build profiles.
-- Wire fixers to their actual PowerShell parameter sets and implement dry-run/backups.
-- Parse MSBuild error codes into a diagnostics grid.
-
+- Repairs and conversions can modify project files. Review changes and retain backups; some recovered projects still need manual source or content fixes.
 
 ## Detect Configuration Issues
 Select projects, set Configuration/Platform and optional framework/RID, then click **Detect Configuration Issues**.
