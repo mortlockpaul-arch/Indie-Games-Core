@@ -152,6 +152,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         {
             if (seed && !existing.Manager.Complete) throw new InvalidOperationException("Finish downloading this package before seeding it.");
             await RememberProjectAsync(project, token);
+            if(existing.Manager.State is TorrentState.Downloading or TorrentState.Seeding or TorrentState.Starting or TorrentState.Hashing)return existing;
             await existing.Manager.StartAsync(); return existing;
         }
         string own = Path.Combine(StateDirectory, "shares", project.Id, project.PackageName);
@@ -263,7 +264,16 @@ public sealed class ProjectTorrentService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_engine == null) return;
-        try { await Task.WhenAll(Transfers.Select(t => t.Manager.StopAsync())).WaitAsync(TimeSpan.FromSeconds(15)); }
+        async Task StopAsync(ProjectTransfer transfer)
+        {
+            try { await transfer.Manager.StopAsync(); }
+            catch(IOException error) when((error.HResult & 0xffff) is 32 or 33)
+            {
+                // MonoTorrent can overlap automatic fast-resume writes with shutdown.
+                // Keep payload and catalogue metadata; a later start rechecks cached pieces.
+            }
+        }
+        try { await Task.WhenAll(Transfers.Select(StopAsync)).WaitAsync(TimeSpan.FromSeconds(15)); }
         catch (TimeoutException) { /* Dispose still closes the peer listeners; cached pieces can be rechecked next time. */ }
         finally { _engine.Dispose(); _engine = null; Transfers.Clear(); }
     }

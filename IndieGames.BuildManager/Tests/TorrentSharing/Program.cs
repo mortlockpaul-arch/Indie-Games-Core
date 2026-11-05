@@ -179,6 +179,8 @@ await using(var completed=new ProjectTorrentService(resumeRoot,Settings("resume-
 {
     if(await completed.StartSavedTransfersAsync(_=>{},token)!=1)throw new Exception("Completed download was not restored for seeding");
     while(completed.Transfers[0].Manager.State!=TorrentState.Seeding){token.ThrowIfCancellationRequested();await Task.Delay(50,token);}
+    if(await completed.StartSavedTransfersAsync(_=>{},token)!=1 || completed.Transfers.Count!=1 || completed.Transfers[0].Manager.State!=TorrentState.Seeding)
+        throw new Exception("Starting an already-active torrent should not interrupt seeding");
 }
 await using(var emptyService=new ProjectTorrentService(Path.Combine(root,"empty-start"),Settings("empty-start",Port())))
 {
