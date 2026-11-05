@@ -54,7 +54,7 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
         settingsFile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"IndieGames","GameSettings",key+".json");
         try
         {
-            var saved=JsonSerializer.Deserialize<Saved>(File.ReadAllText(settingsFile));
+            var saved=File.Exists(settingsFile) ? JsonSerializer.Deserialize<Saved>(File.ReadAllText(settingsFile)) : null;
             if(saved!=null && saved.Width>=640 && saved.Height>=360 && saved.Width<=7680 && saved.Height<=4320)
             {
                 graphics.PreferredBackBufferWidth=saved.Width;graphics.PreferredBackBufferHeight=saved.Height;graphics.IsFullScreen=saved.Fullscreen;
