@@ -14,7 +14,7 @@ public static class ConfigurationDiagnostics
     public static async Task<ConfigurationReport> InspectAsync(
         GameProject project, string configuration, string platform, string target,
         string frameworkOverride, string runtimeOverride, string msbuildExecutable,
-        Action<string> log, CancellationToken token, IEnumerable<string>? buildArguments = null)
+        Action<string> log, CancellationToken token, IEnumerable<string>? buildArguments = null, string? workingDirectory = null)
     {
         var issues = new List<ConfigurationIssue>();
         void Add(string severity, string code, string detail, string fix) =>
@@ -35,7 +35,7 @@ public static class ConfigurationDiagnostics
         args.Add("-getProperty:Configuration,Platform,PlatformTarget,Platforms,Configurations,TargetFramework,TargetFrameworks,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,TargetPath,BaseIntermediateOutputPath,ProjectAssetsFile,IsCrossTargetingBuild");
 
         var start = new ProcessStartInfo(msbuildExecutable) {
-            WorkingDirectory = Path.GetDirectoryName(project.Path)!,
+            WorkingDirectory = workingDirectory ?? Path.GetDirectoryName(project.Path)!,
             RedirectStandardOutput = true, RedirectStandardError = true,
             UseShellExecute = false, CreateNoWindow = true
         };

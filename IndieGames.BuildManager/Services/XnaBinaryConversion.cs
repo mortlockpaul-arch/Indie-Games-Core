@@ -15,6 +15,29 @@ public static class XnaBinaryConversion
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
     static string Hash(string path) { using var stream=File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }
     static AssemblyDefinition Read(string path) => AssemblyDefinition.ReadAssembly(path, new ReaderParameters { ReadingMode=ReadingMode.Immediate });
+    public static string? FindOriginalExecutable(string? projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(projectPath)) return null;
+        string originalFolder = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(projectPath))!, "584E07D1");
+        if (!Directory.Exists(originalFolder)) return null;
+
+        var matches = new List<string>();
+        foreach (string file in Directory.EnumerateFiles(originalFolder, "*.exe"))
+        {
+            try
+            {
+                using var game = Read(file);
+                var references = game.MainModule.AssemblyReferences;
+                if (game.EntryPoint is not null &&
+                    references.Any(r => r.Name.StartsWith("Microsoft.Xna.Framework", StringComparison.Ordinal)) &&
+                    !references.Any(r => r.Name is "FNA" or "XnaToFna"))
+                    matches.Add(file);
+            }
+            catch (Exception error) when (error is IOException or BadImageFormatException or UnauthorizedAccessException) { }
+        }
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
     public static XnaConversionCheck Check(string executable, string runtime)
     {
         var details=new List<string>(); bool valid=true;

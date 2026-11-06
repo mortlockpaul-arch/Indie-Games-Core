@@ -12,6 +12,7 @@ public sealed class LibraryStorage
     public string TorrentCache { get; set; } = @"D:\indie-torrent-cache";
     public string Solution { get; set; } = @"C:\source\Indie-Games-Core\Indie-Games.slnx";
     public string Scripts { get; set; } = @"C:\PycharmProjects\xenia-game-manager\src\scripts";
+    public string LegacyFnaRuntime { get; set; } = "";
     public static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "IndieGames.BuildManager", "storage.json");
     public static LibraryStorage Load()
     {
@@ -45,6 +46,18 @@ public sealed class LibraryStorage
         return Path.Combine(root, name);
     }
     public static string ProjectKey(string project) => Path.GetFileNameWithoutExtension(project) + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(project).ToUpperInvariant())))[..10];
+    public string SdkWorkingDirectory(string project)
+    {
+        string projectDirectory = Path.GetDirectoryName(Path.GetFullPath(project))!;
+        for (var folder = new DirectoryInfo(projectDirectory); folder is not null; folder = folder.Parent)
+            if (File.Exists(Path.Combine(folder.FullName, "global.json"))) return projectDirectory;
+
+        string? solutionDirectory = Path.GetDirectoryName(Solution);
+        return !string.IsNullOrWhiteSpace(solutionDirectory) &&
+            File.Exists(Path.Combine(solutionDirectory, "global.json"))
+            ? solutionDirectory : projectDirectory;
+    }
+
     public IEnumerable<string> BuildArguments(string project)
     {
         Validate();

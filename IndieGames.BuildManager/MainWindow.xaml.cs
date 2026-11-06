@@ -442,7 +442,7 @@ public static void ScanXnaReferences(string folder)
                 "-getProperty:TargetFramework,TargetFrameworks,Configuration,Platform,PlatformTarget,Platforms,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,BaseIntermediateOutputPath,ProjectAssetsFile" };
             args.AddRange(_storage.BuildArguments(project.Path));
             await ProcessRunner.RunAsync("dotnet", args,
-                Path.GetDirectoryName(project.Path)!, Log, token);
+                _storage.SdkWorkingDirectory(project.Path), Log, token);
         });
     }
     private async void Detect_Click(object sender, RoutedEventArgs e)
@@ -462,7 +462,8 @@ public static void ScanXnaReferences(string folder)
                 try
                 {
                     var report = await ConfigurationDiagnostics.InspectAsync(project, config, platform,
-                        target, framework, runtime, exe, Log, token, _storage.BuildArguments(project.Path));
+                        target, framework, runtime, exe, Log, token, _storage.BuildArguments(project.Path),
+                        exe == "dotnet" ? _storage.SdkWorkingDirectory(project.Path) : null);
                     foreach (var issue in report.Issues)
                         Log($"[{issue.Severity}] {issue.Code}: {issue.Detail}\\n  Suggested action: {issue.Recommendation}");
                     project.Status = report.Issues.Any(i => i.Severity == "Error") ? "Issues found" :
@@ -515,7 +516,8 @@ public static void ScanXnaReferences(string folder)
                 Log($"> {exe} {string.Join(" ", args)}");
                 try
                 {
-                    int code = await ProcessRunner.RunAsync(exe, args, Path.GetDirectoryName(project.Path)!, Log, token);
+                    string workingDirectory = vs ? Path.GetDirectoryName(project.Path)! : _storage.SdkWorkingDirectory(project.Path);
+                    int code = await ProcessRunner.RunAsync(exe, args, workingDirectory, Log, token);
                     project.Status = code == 0 ? "Succeeded" : $"Failed ({code})";
                 }
                 catch { project.Status = "Failed"; throw; }
@@ -568,7 +570,7 @@ public static void ScanXnaReferences(string folder)
             foreach(var game in selected){token.ThrowIfCancellationRequested();try{var result=await Task.Run(()=>GameOverlayInstaller.Install(game.Path,core,token),token);Log($"{game.Name}: {result.Status} — {result.Message}");if(result.Backup!=null)Log("Overlay backup: "+result.Backup);}catch(OperationCanceledException){throw;}catch(Exception ex){Log($"{game.Name}: overlay installation failed — {ex.GetBaseException().Message}");}}
         });
     }
-    private void ConvertXnaBinary_Click(object sender, RoutedEventArgs e) => new XnaConversionWindow(_storage) { Owner=this }.ShowDialog();
+    private void ConvertXnaBinary_Click(object sender, RoutedEventArgs e) => new XnaConversionWindow(_storage, Selected().FirstOrDefault()?.Path) { Owner=this }.ShowDialog();
     private void OpenGameLogs_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -987,8 +989,12 @@ public static void ScanXnaReferences(string folder)
                     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script,
                      "-ContentDirectory", content, "-ExtractorExe", extractor, "-FfmpegExe", ffmpeg, "-Install"],
                     folder, Log, token);
-                Log(code == 0 ? "Audio converted. Rebuild the game to copy updated content to bin." :
-                    "Audio conversion had failures. Review the log and audio-conversion report.");
+                Log(code switch
+                {
+                    0 => "Audio converted. Rebuild the game to copy updated content to bin.",
+                    2 => "Skipped: no Song or SoundEffect XNBs. Use Repairs → Wave banks for XACT wave banks.",
+                    _ => "Audio conversion had failures. Review the log and audio-conversion report."
+                });
             }
         });
     }
