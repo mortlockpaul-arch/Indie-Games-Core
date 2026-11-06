@@ -45,7 +45,10 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
-    <Project Path="SunBurn.Decompiled/SynapseGaming-SunBurn-Pro.csproj" />
+    <Project Path="SunBurn.Decompiled/SynapseGaming-SunBurn-Pro.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
     <Project Path="tools/XnaAssemblyRedirector/XnaAssemblyRedirector.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
