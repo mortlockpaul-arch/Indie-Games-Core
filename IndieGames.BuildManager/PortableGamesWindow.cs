@@ -19,6 +19,8 @@ public sealed class PortableGamesWindow : Window
     readonly TextBox log = new() { IsReadOnly=true, AcceptsReturn=true, Height=85, VerticalScrollBarVisibility=ScrollBarVisibility.Auto, FontSize=12 };
     readonly ProgressBar progress = new() { Height=5, Margin=new Thickness(4) };
     readonly WrapPanel buttons = new();
+    readonly CheckBox decompPort = new() { Content = "Import as decomp port", Foreground = Brushes.LightSteelBlue, Margin = new Thickness(4) };
+    string ImportRoot => decompPort.IsChecked == true ? storage.DecompPorts : storage.Games;
     CancellationTokenSource? work;
     PortableGame Selected => grid.SelectedItem as PortableGame ?? throw new IOException("Select a playable game first.");
     public PortableGamesWindow(LibraryStorage library, Action<ShareSelection> onShare, Action<string> onLog)
@@ -31,7 +33,8 @@ public sealed class PortableGamesWindow : Window
         var top=new StackPanel();DockPanel.SetDock(top,Dock.Top);panel.Children.Add(top);
         top.Children.Add(new TextBlock{Text="Playable Games & Ports",FontSize=24,FontWeight=FontWeights.SemiBold,Margin=new Thickness(4)});
         top.Children.Add(new TextBlock{Text="Import Windows ports, run installed games or share their playable files.",Foreground=Brushes.LightSteelBlue,Margin=new Thickness(4,2,4,10)});
-        top.Children.Add(new TextBlock{Text="Library: "+storage.Games,Foreground=Brushes.LightSteelBlue,Margin=new Thickness(4,0,4,10),TextWrapping=TextWrapping.Wrap});
+        top.Children.Add(new TextBlock{Text="Games: " + storage.Games + Environment.NewLine + "Decomp ports: " + storage.DecompPorts,Foreground=Brushes.LightSteelBlue,Margin=new Thickness(4,0,4,10),TextWrapping=TextWrapping.Wrap});
+        top.Children.Add(decompPort);
         top.Children.Add(buttons);
         Add("Import ZIPs…",ImportZips);Add("Import ZIP folder…",ImportZipFolder);Add("Import extracted folder…",ImportFolder);Add("Refresh",()=>Run(Refresh));Add("Help",()=>SharingHelpWindow.ShowFor(this));
         var footer=new StackPanel();DockPanel.SetDock(footer,Dock.Bottom);panel.Children.Add(footer);
@@ -58,11 +61,17 @@ public sealed class PortableGamesWindow : Window
         try{await action(work.Token);}catch(OperationCanceledException){Log("Import cancelled; original files kept.");}catch(Exception ex){Log(ex.GetBaseException().Message);}
         finally{work.Dispose();work=null;buttons.IsEnabled=true;progress.IsIndeterminate=false;}
     }
-    async Task Refresh(CancellationToken token){var games=await Task.Run(()=>PortableGames.Scan(storage.Games),token);grid.ItemsSource=games;Log($"{games.Count} playable games found.");}
+    async Task Refresh(CancellationToken token){var games=await Task.Run(() => PortableGames.Scan(storage.Games)
+            .Concat(PortableGames.Scan(storage.DecompPorts).Select(game => game with { Kind = "Decomp port" }))
+            .ToArray(),token);grid.ItemsSource=games;Log($"{games.Length} playable games found.");}
     void ImportZips(){var dialog=new OpenFileDialog{Title="Import playable game ZIPs",Filter="ZIP archives (*.zip)|*.zip",Multiselect=true};if(dialog.ShowDialog(this)==true)Import(dialog.FileNames);}
     void ImportZipFolder(){var dialog=new OpenFolderDialog{Title="Choose a folder of playable game ZIPs"};if(dialog.ShowDialog(this)==true)Import(Directory.GetFiles(dialog.FolderName,"*.zip"));}
-    void Import(IEnumerable<string> paths)=>Run(async token=>{foreach(var path in paths){token.ThrowIfCancellationRequested();try{await Task.Run(()=>PortableGames.ImportZipAsync(path,storage.Games,null,Log,token),token);}catch(Exception ex)when(ex is not OperationCanceledException){Log(Path.GetFileName(path)+": "+ex.Message);}}await Refresh(token);});
-    void ImportFolder(){var dialog=new OpenFolderDialog{Title="Choose an extracted playable game folder"};if(dialog.ShowDialog(this)==true)Run(async token=>{await Task.Run(()=>PortableGames.ImportFolderAsync(dialog.FolderName,storage.Games,Log,token),token);await Refresh(token);});}
+    void Import(IEnumerable<string> paths)
+    {
+        string root = ImportRoot;
+        Run(async token=>{foreach(var path in paths){token.ThrowIfCancellationRequested();try{await Task.Run(()=>PortableGames.ImportZipAsync(path,root,null,Log,token),token);}catch(Exception ex)when(ex is not OperationCanceledException){Log(Path.GetFileName(path)+": "+ex.Message);}}await Refresh(token);});
+    }
+    void ImportFolder(){var dialog=new OpenFolderDialog{Title="Choose an extracted playable game folder"};string root = ImportRoot;if(dialog.ShowDialog(this)==true)Run(async token=>{await Task.Run(()=>PortableGames.ImportFolderAsync(dialog.FolderName,root,Log,token),token);await Refresh(token);});}
     void RunGame(){var game=Selected;var exe=PortableGames.ResolveExecutable(game.Folder);GameProcessLauncher.Start(exe,GameProcessLauncher.DefaultLogDirectory,Log,PortableGames.LaunchEnvironment(game.Folder));}
     void ChooseExecutable()
     {

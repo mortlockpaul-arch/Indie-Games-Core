@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +8,7 @@ public sealed class LibraryStorage
 {
     public string Archive { get; set; } = @"D:\indie-game-archive";
     public string Games { get; set; } = @"D:\indie-games";
+    public string DecompPorts { get; set; } = @"D:\indie-decomp-ports";
     public string BuildCache { get; set; } = @"D:\indie-build-cache";
     public string TorrentCache { get; set; } = @"D:\indie-torrent-cache";
     public string Solution { get; set; } = @"C:\source\Indie-Games-Core\Indie-Games.slnx";
@@ -21,14 +22,14 @@ public sealed class LibraryStorage
     }
     public void Validate()
     {
-        var values = new[] { Archive, Games, BuildCache, TorrentCache };
+        var values = new[] { Archive, Games, DecompPorts, BuildCache, TorrentCache };
         if (values.Any(x => !Path.IsPathFullyQualified(x))) throw new IOException("Use absolute storage folder paths.");
         var roots = values.Select(x => Path.TrimEndingDirectorySeparator(Path.GetFullPath(x))).ToArray();
         foreach (var root in roots)
             if (root == Path.GetPathRoot(root) || !Path.IsPathFullyQualified(root)) throw new IOException("Choose a dedicated folder, not a drive root.");
         for (int i = 0; i < roots.Length; i++) for (int j = 0; j < roots.Length; j++)
             if (i != j && (roots[i].Equals(roots[j], StringComparison.OrdinalIgnoreCase) || roots[i].StartsWith(roots[j] + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
-                throw new IOException("Source, games, build cache and torrent cache must be separate folders, outside one another.");
+                throw new IOException("Source, games, decomp ports, build cache and torrent cache must be separate folders, outside one another.");
     }
     public void Save()
     {
