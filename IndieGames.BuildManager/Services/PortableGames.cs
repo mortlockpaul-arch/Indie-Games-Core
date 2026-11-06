@@ -17,6 +17,7 @@ public sealed record PortableGameManifest
 }
 public sealed record PortableGame(string Folder, string Name, string EntryPoint, string Kind, string Status)
 {
+    public string DisplayKind => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(Kind);
     public string? ExecutableVersion { get; init; }
     public string Executable => string.IsNullOrEmpty(EntryPoint) ? "" : Path.Combine(Folder, EntryPoint);
 }

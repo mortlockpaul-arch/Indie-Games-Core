@@ -45,7 +45,7 @@ public sealed class PortableGamesWindow : Window
         var cancel=new Button{Content="Cancel Import"};cancel.Click+=(_,_)=>work?.Cancel();actions.Children.Add(cancel);
         footer.Children.Add(progress);footer.Children.Add(log);
         grid.Columns.Add(new DataGridTextColumn{Header="Game",Binding=new Binding("Name"),Width=new DataGridLength(2,DataGridLengthUnitType.Star)});
-        grid.Columns.Add(new DataGridTextColumn{Header="Library Type",Binding=new Binding("Kind"),Width=130});
+        grid.Columns.Add(new DataGridTextColumn{Header="Library Type",Binding=new Binding(nameof(PortableGame.DisplayKind)),Width=130});
         grid.Columns.Add(new DataGridTextColumn{Header="Executable",Binding=new Binding("EntryPoint"),Width=new DataGridLength(2,DataGridLengthUnitType.Star)});
         grid.Columns.Add(new DataGridTextColumn{Header="Version",Binding=new Binding(nameof(PortableGame.ExecutableVersion)){TargetNullValue="—"},Width=110});
         grid.Columns.Add(new DataGridTextColumn{Header="Status",Binding=new Binding("Status"),Width=180});
