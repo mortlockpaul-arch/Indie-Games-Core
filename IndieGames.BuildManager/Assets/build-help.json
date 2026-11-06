@@ -89,7 +89,7 @@
         },
         {
           "title": "GitHub Catalogue Publishing",
-          "body": "In Python, open Settings → Tools & Updates and save your token under GitHub Catalogue Publishing. Windows Credential Manager stores it separately from the download token. For a fine-grained token, select Indie-Games-Catalogue and give Contents and Pull requests read and write access. Exit Build Manager from its tray menu, then relaunch it from Python. Connect GitHub validates the saved token. If browser or terminal sign-in fails, use this token setup. After a failed upload, select the existing package in My Catalogue and choose Publish selected. If GitHub returns 403, check repository access and the permissions for the operation named in the log."
+          "body": "In Python, open Settings → Tools & Updates and save your token under GitHub Catalogue Publishing. Windows Credential Manager stores it separately from the download token. For a fine-grained token, select Indie-Games-Catalogue and give Contents and Pull requests read and write access. Exit Build Manager from its tray menu, then relaunch it from Python. Connect GitHub validates the saved token. If browser or terminal sign-in fails, use this token setup. After a failed upload, select the existing package in My Catalogue and choose Submit Selected. If GitHub returns 403, check repository access and the permissions for the operation named in the log."
         },
         {
           "title": "Help Videos",
@@ -147,7 +147,7 @@
         },
         {
           "title": "Snapshot Types and Duplicate Shares",
-          "body": "Source files and Playable game are intentionally separate packages. Each immutable snapshot has its own creation time and ID. Repeating New share with unchanged file names and bytes now reuses a valid cached snapshot. Changing content creates a new revision. ZIP timestamps and compression metadata are ignored for content comparison. Older duplicates are retained; select two rows for the same game and package type and use Compare snapshots to list added, removed or changed files. Both packages must be cached locally. Remove selected can remove an unwanted catalogue row while retaining cached and installed files."
+          "body": "Source files and Playable game are intentionally separate packages. Each immutable snapshot has its own creation time and ID. Repeating New share with unchanged file names and bytes now reuses a valid cached snapshot. Changing content creates a new revision. ZIP timestamps and compression metadata are ignored for content comparison. Older duplicates are retained; select two rows for the same game and package type and use Compare Snapshots to list added, removed or changed files. Both packages must be cached locally. Remove selected can remove an unwanted catalogue row while retaining cached and installed files."
         }
       ]
     },

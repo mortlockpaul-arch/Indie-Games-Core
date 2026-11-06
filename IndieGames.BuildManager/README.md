@@ -55,17 +55,17 @@ Select one or more projects, then click **Inject Startup Diagnostics**. Adds run
 
 ## Global project catalogue (1.1.0)
 
-Build Manager automatically reads the approved catalogue from [Indie-Games-Catalogue](https://github.com/mortlockpaul-arch/Indie-Games-Catalogue). No catalogue file needs to be opened, saved or exported. The catalogue refreshes when opened, every five minutes while visible, and with **Refresh catalogue**. A fully verified copy is cached for offline browsing; a failed or malformed download does not replace it.
+Build Manager automatically reads the approved catalogue from [Indie-Games-Catalogue](https://github.com/mortlockpaul-arch/Indie-Games-Catalogue). No catalogue file needs to be opened, saved or exported. The catalogue refreshes when opened, every five minutes while visible, and with **Refresh Catalogue**. A fully verified copy is cached for offline browsing; a failed or malformed download does not replace it.
 
 ### Publish a project
 
 1. Choose **Connect GitHub** and complete the browser/terminal sign-in. The app installs GitHub CLI if needed; GitHub CLI manages the credential. Browsing and downloading need no account.
-2. Choose **Publish project**, select source files, a playable build, or both, and review the preview. Publish only material you have permission to share. Builds, backups, logs and version-control metadata are excluded from source packages; directory links are not followed.
-3. Choose **Publish for approval**. Build Manager packages and seeds the selected files, then submits metadata to a GitHub pull request in the dedicated catalogue repository. External contributors use their own fork; nobody receives a shared write token.
-4. The catalogue owner reviews and merges accepted requests. GitHub Actions validates and publishes approved entries; recipients then see them automatically. **My submissions** opens the contributor's requests; **Review submissions** opens the owner's review queue. There is no automatic merge.
+2. Choose **New Submission**, select source files, a playable build, or both, and review the preview. Publish only material you have permission to share. Builds, backups, logs and version-control metadata are excluded from source packages; directory links are not followed.
+3. Choose **Submit for Approval**. Build Manager packages and seeds the selected files, then submits metadata to a GitHub pull request in the dedicated catalogue repository. External contributors use their own fork; nobody receives a shared write token.
+4. The catalogue owner reviews and merges accepted requests. GitHub Actions validates and publishes approved entries; recipients then see them automatically. **My Submissions** opens the contributor's requests; **Review Submissions** opens the owner's review queue. There is no automatic merge.
 5. Keep Build Manager running to seed the package. Changing files creates a new snapshot; unchanged files reuse a valid existing package. Repeated submission reuses its request. A rejected request stays closed; modify the package to create a new snapshot.
 
-Existing local shares remain visible as **Local · not submitted** and can be migrated with **Publish selected**. Failed submissions retain packages and seeding state so they can be retried. **Awaiting approval** packages are local to the contributor, not part of the global catalogue. Accepted entries show **Approved** once the published catalogue contains them. The initial catalogue is empty until the owner accepts a submission.
+Existing local shares remain visible as **Local · not submitted** and can be migrated with **Submit Selected**. Failed submissions retain packages and seeding state so they can be retried. **Awaiting approval** packages are local to the contributor, not part of the global catalogue. Accepted entries show **Approved** once the published catalogue contains them. The initial catalogue is empty until the owner accepts a submission.
 
 ### Download and install
 

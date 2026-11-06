@@ -10,7 +10,7 @@ param([switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
 
 # The fallback is used when the script ships with a standalone Build Manager.
-$required = [version]'10.0.401'
+$required = [version]'10.0.403'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $globalJson = Join-Path $repo 'global.json'
 if (Test-Path -LiteralPath $globalJson -PathType Leaf) {

@@ -52,7 +52,7 @@ internal static class Program
             catalogue.Show();
             if(catalogue.FindName("CatalogueLocationBox")!=null)throw new Exception("Manual catalogue loading is still exposed");
             if(catalogue.FindName("GlobalCatalogueStatus") is not TextBlock)throw new Exception("Automatic catalogue status is missing");
-            if(((Button)catalogue.FindName("CreateShareButton")).Content.ToString()!="Publish for approval")throw new Exception("Publish approval action is missing");
+            if(((Button)catalogue.FindName("CreateShareButton")).Content.ToString()!="Submit for Approval")throw new Exception("Publish approval action is missing");
             foreach(int kind in new[]{0,1,2})
             {
                 Console.WriteLine($"Checking automatic share preview for package type {kind}");

@@ -200,7 +200,7 @@ public partial class TorrentWindow : Window
                 "Choose Start selected, wait for 100%, then Verify and install. Source files require building before they can run.";
             text = $"{row.KindLabel} · Created {row.Project.CreatedUtc.ToLocalTime():dd MMM yyyy HH:mm:ss} · Snapshot {row.Project.SnapshotDisplay} · {row.Project.FileCount:N0} files\n" + text;
             if (_rows.Count(r => r.Project.Name.Equals(row.Project.Name, StringComparison.OrdinalIgnoreCase) && r.Project.PackageKind == row.Project.PackageKind) > 1)
-                text += "\nMore than one snapshot exists for this package type. Select two and choose Compare snapshots to see file differences.";
+                text += "\nMore than one snapshot exists for this package type. Select two and choose Compare Snapshots to see file differences.";
         }
         if (PackageHelpText.Text != text) PackageHelpText.Text = text;
     }
@@ -233,7 +233,7 @@ public partial class TorrentWindow : Window
             foreach(var entry in entries) AddLocalRow(entry);
             foreach(var row in _rows) row.SetPublication(_catalogueState.Publication(row.Project,_approved));
             GlobalCatalogueStatus.Text=result.Message;
-            Log(result.Offline ? result.Message : "Global catalogue refreshed. New submissions appear after the owner approves and merges them.");
+            Log(result.Offline ? result.Message : "Global catalogue refreshed. New Submissions appear after the owner approves and merges them.");
         }
         catch(OperationCanceledException) when(_lifetime.IsCancellationRequested) { }
         catch(Exception error) { GlobalCatalogueStatus.Text="Catalogue refresh failed. Local packages are still available."; Log(error.GetBaseException().Message); }
@@ -433,7 +433,7 @@ public partial class TorrentWindow : Window
             await _service.StartAsync(entry, seed: true, token);
             }
             await SubmitProjectsAsync(submitted,token);
-            _preview=null; CreateShareButton.IsEnabled=false; ShareSummary.Text="Submitted for approval — seeding";
+            _preview=null; CreateShareButton.IsEnabled=false; ShareSummary.Text="Awaiting approval — seeding";
         });
     }
     public async Task<int> StartSavedTorrentsAsync()
