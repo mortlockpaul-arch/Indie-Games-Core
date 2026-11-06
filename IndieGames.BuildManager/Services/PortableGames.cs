@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -16,6 +17,7 @@ public sealed record PortableGameManifest
 }
 public sealed record PortableGame(string Folder, string Name, string EntryPoint, string Kind, string Status)
 {
+    public string? ExecutableVersion { get; init; }
     public string Executable => string.IsNullOrEmpty(EntryPoint) ? "" : Path.Combine(Folder, EntryPoint);
 }
 
@@ -92,7 +94,21 @@ public static class PortableGames
         var candidates = Executables(folder);
         string entry = manifest?.EntryPoint ?? GuessEntry(folder, candidates);
         string status = entry.Length == 0 ? "Choose executable" : File.Exists(ResolveRelative(folder, entry)) ? "Ready to run" : "Executable missing";
-        return new(folder, manifest?.Name ?? Path.GetFileName(folder), entry, manifest?.Kind ?? "Built game", status);
+        var game = new PortableGame(folder, manifest?.Name ?? Path.GetFileName(folder), entry, manifest?.Kind ?? "Built game", status);
+        return status == "Ready to run" ? game with { ExecutableVersion = ReadExecutableVersion(game.Executable) } : game;
+    }
+
+    static string? ReadExecutableVersion(string executable)
+    {
+        try
+        {
+            var version = FileVersionInfo.GetVersionInfo(executable);
+            return string.IsNullOrWhiteSpace(version.FileVersion) ? version.ProductVersion?.Trim() : version.FileVersion.Trim();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
     }
     public static IReadOnlyList<PortableGame> Scan(string gamesRoot)
     {

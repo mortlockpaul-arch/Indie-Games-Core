@@ -43,10 +43,10 @@
        <StackPanel DockPanel.Dock="Bottom" Margin="0,5,0,0">
         <WrapPanel>
          <TextBlock x:Name="GameSelectionCount" Text="Select games to build or repair" Foreground="#93C5FD" Margin="4"/>
-          <Button Content="Check architecture" Click="Detect_Click" ToolTip="Check configuration and compiled DLL architectures for selected rows"/>
-          <Button Content="Open folder" x:Name="OpenSelectedFolderButton" Click="OpenSelectedFolder_Click" IsEnabled="False"/>
-          <Button x:Name="AddToSolutionButton" Content="Add to solution" Click="AddToSolution_Click" IsEnabled="False"/>
-          <Button x:Name="RemoveFromSolutionButton" Content="Remove from solution" Click="RemoveFromSolution_Click" IsEnabled="False" ToolTip="Remove selected project entries from the solution; keep all project and game files"/>
+          <Button Content="Check Architecture" Click="Detect_Click" ToolTip="Check configuration and compiled DLL architectures for selected rows"/>
+          <Button Content="Open Folder" x:Name="OpenSelectedFolderButton" Click="OpenSelectedFolder_Click" IsEnabled="False"/>
+          <Button x:Name="AddToSolutionButton" Content="Add to Solution" Click="AddToSolution_Click" IsEnabled="False"/>
+          <Button x:Name="RemoveFromSolutionButton" Content="Remove from Solution" Click="RemoveFromSolution_Click" IsEnabled="False" ToolTip="Remove selected project entries from the solution; keep all project and game files"/>
           <Button Content="Settings…" Click="Storage_Click" ToolTip="Configure the solution path and library folders"/>
          <TextBlock x:Name="SelectedSolutionName" Text="No solution selected" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap" Margin="6,0"/>
         </WrapPanel>
@@ -98,23 +98,23 @@
           <StackPanel><TextBlock Text="Action"/><ComboBox x:Name="ActionBox" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="Build"/><ComboBoxItem Content="Rebuild"/><ComboBoxItem Content="Clean"/><ComboBoxItem Content="Restore"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="1"><TextBlock Text="Configuration"/><ComboBox x:Name="ConfigBox" Style="{StaticResource BuildChoice}" IsEditable="True" Text="Debug"><ComboBoxItem Content="Debug"/><ComboBoxItem Content="Release"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="2"><TextBlock Text="Platform"/><ComboBox x:Name="PlatformBox" SelectionChanged="BuildArchitecture_Changed" LostKeyboardFocus="BuildArchitecture_Changed" Style="{StaticResource BuildChoice}" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox></StackPanel>
-          <StackPanel Grid.Column="3"><TextBlock Text="Compiler target"/><ComboBox x:Name="TargetBox" SelectionChanged="BuildArchitecture_Changed" LostKeyboardFocus="BuildArchitecture_Changed" Style="{StaticResource BuildChoice}" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox></StackPanel>
-          <StackPanel Grid.Column="4"><TextBlock Text="Network backend"/><ComboBox x:Name="NetworkBackendBox" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="NetStub"/><ComboBoxItem Content="Steamworks"/><ComboBoxItem Content="LiteNetLib" IsEnabled="False"/></ComboBox></StackPanel>
+          <StackPanel Grid.Column="3"><TextBlock Text="Compiler Target"/><ComboBox x:Name="TargetBox" SelectionChanged="BuildArchitecture_Changed" LostKeyboardFocus="BuildArchitecture_Changed" Style="{StaticResource BuildChoice}" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox></StackPanel>
+          <StackPanel Grid.Column="4"><TextBlock Text="Network Backend"/><ComboBox x:Name="NetworkBackendBox" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="NetStub"/><ComboBoxItem Content="Steamworks"/><ComboBoxItem Content="LiteNetLib" IsEnabled="False"/></ComboBox></StackPanel>
          </Grid>
          <WrapPanel>
           <Button Style="{StaticResource BuildAction}" Content="Build" Click="Build_Click" Background="#2563EB"/>
-          <Button Style="{StaticResource BuildAction}" x:Name="RunGameButton" Content="Run game" Click="RunGameButton_Click"/>
+          <Button Style="{StaticResource BuildAction}" x:Name="RunGameButton" Content="Run Game" Click="RunGameButton_Click"/>
           <Button Style="{StaticResource BuildAction}" Content="Cancel" Click="Cancel_Click"/>
-          <Button Content="Save architecture to selected projects" Click="SaveArchitecture_Click" ToolTip="Save compiler architecture and default platform with backups. Build choices are temporary until saved; rebuild afterward."/>
+          <Button Content="Save Architecture to Selected Projects" Click="SaveArchitecture_Click" ToolTip="Save compiler architecture and default platform with backups. Build choices are temporary until saved; rebuild afterward."/>
          <Expander Header="Advanced build settings" Foreground="#E5E7EB" Margin="8,6,3,3">
           <StackPanel Margin="0,7,0,0">
            <TextBlock Text="Framework override"/><TextBox x:Name="FrameworkBox"/>
            <TextBlock Text="Runtime identifier override"/><TextBox x:Name="RuntimeBox"/>
            <TextBlock Text="DefineConstants override"/><TextBox x:Name="DefineConstantsBox" ToolTip="Semicolon-separated symbols. Replaces project-defined symbols."/>
-           <CheckBox x:Name="NoRestoreBox" Content="Skip restore" Margin="5"/>
+           <CheckBox x:Name="NoRestoreBox" Content="Skip Restore" Margin="5"/>
            <CheckBox x:Name="UseVsBox" Content="Use Visual Studio MSBuild" Margin="5"/>
            <TextBox x:Name="MsbuildPathBox" ToolTip="Full path to MSBuild.exe"/>
-           <Button Content="Inspect properties" Click="Inspect_Click" HorizontalAlignment="Left"/>
+           <Button Content="Inspect Properties" Click="Inspect_Click" HorizontalAlignment="Left"/>
           </StackPanel>
          </Expander>
          </WrapPanel>
@@ -126,9 +126,9 @@
         <StackPanel Margin="7">
          <TextBlock Text="Select rows in the grid. Ctrl or Shift selects multiple games. Originals are backed up; rebuild after repairs." TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="11" Margin="3,0,3,9"/>
          <WrapPanel>
-         <Button Content="Source and SDK repairs…" Click="BatchXnaFixes_Click" HorizontalAlignment="Left" Background="#2563EB"/>
-         <Button Content="Add F1 settings overlay" Click="InstallOverlay_Click" HorizontalAlignment="Left" ToolTip="Install backed-up F1 settings hooks in supported .NET 9+ FNA or MonoGame source games. Rebuild afterward."/>
-         <Button Content="Convert compiled XNA game…" Click="ConvertXnaBinary_Click" ToolTip="Convert an original compiled game in a separate folder using XnaToFna."/>
+         <Button Content="Source and SDK Repairs…" Click="BatchXnaFixes_Click" HorizontalAlignment="Left" Background="#2563EB"/>
+         <Button Content="Add F1 Settings Overlay" Click="InstallOverlay_Click" HorizontalAlignment="Left" ToolTip="Install backed-up F1 settings hooks in supported .NET 9+ FNA or MonoGame source games. Rebuild afterward."/>
+         <Button Content="Convert Compiled XNA Game…" Click="ConvertXnaBinary_Click" ToolTip="Convert an original compiled game in a separate folder using XnaToFna."/>
          </WrapPanel>
          <WrapPanel>
           <TextBlock Text="Content" FontWeight="SemiBold" Margin="3,0,8,0"/>

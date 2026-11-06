@@ -41,7 +41,7 @@ The separately distributed Python frontend handles extraction and ILSpy decompil
 | Configuration | Set MSBuild platform and compiler platform target independently. Override target framework, runtime, or conditional compilation symbols and select Visual Studio MSBuild for legacy projects. |
 | Repairs and conversion | Apply supported reference, content, and known shader repairs and use the XNA conversion tools where appropriate. |
 | Playable library | Launch builds for testing. Import Windows game ZIPs, batches of ZIPs, or extracted folders. Choose the entry executable when needed and launch directly from the library. |
-| Decomp ports | Select **Import as decomp port** in **Playable Games & Ports** to file third-party Windows decomp releases separately and show their library type as **Decomp port**. |
+| Decomp ports | Select **Import as Decomp Port** in **Playable Games & Ports** to file third-party Windows decomp releases separately and show their library type as **Decomp Port**. |
 | Sharing | Preview and package source, playable game files, or both. Submit packages for owner review, track submissions, and browse approved entries in the automatically refreshed catalogue. |
 | Transfers | Start, pause, stop, or resume downloads and seeding. Partial downloads and transfer metadata survive restarts. Verify completed packages before installing them. |
 | Workspace | Keep source, playable files, build intermediates, and torrent data in separate locations. View logs and transfers in resizable panels. |
@@ -66,7 +66,7 @@ GitHub hosts the catalogue metadata. Torrent peers transfer the package files, s
 | --- | --- |
 | `D:\indie-game-archive` | Recovered projects and installed Source packages |
 | `D:\indie-games` | Local Windows builds, standard portable imports, and installed Game packages |
-| `D:\indie-decomp-ports` | Windows releases imported locally with **Import as decomp port** |
+| `D:\indie-decomp-ports` | Windows releases imported locally with **Import as Decomp Port** |
 | `D:\indie-build-cache` | Intermediate build files |
 | `D:\indie-torrent-cache` | Torrent packages, catalogue cache, and transfer state |
 
