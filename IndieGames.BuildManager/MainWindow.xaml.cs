@@ -1,4 +1,4 @@
-using IndieGames.BuildManager.Models;
+﻿using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
@@ -181,6 +181,104 @@ public static void ScanXnaReferences(string folder)
         _playableGames.Closed += (_,_) => _playableGames=null;
         _playableGames.Show();
     }
+    private async void MergeCatalogue_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null) { Log("Wait for the current operation to finish."); return; }
+        string script = _storage.ScriptPath("Merge-CatalogueSubmissions.ps1");
+        if (!File.Exists(script))
+        {
+            var chooser = new OpenFileDialog { Title = "Locate Merge-CatalogueSubmissions.ps1", Filter = "PowerShell (*.ps1)|*.ps1" };
+            if (chooser.ShowDialog(this) != true) return;
+            script = chooser.FileName;
+        }
+        var dialog = new Window {
+            Title = "Merge Catalogue Submissions", Owner = this, Width = 1050, Height = 650,
+            MinWidth = 750, MinHeight = 450, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17,24,39)), Foreground = Brushes.White
+        };
+        var layout = new DockPanel { Margin = new Thickness(14) };
+        dialog.Content = layout;
+        var header = new StackPanel(); DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
+        header.Children.Add(new TextBlock { Text = "Catalogue pull requests", FontSize = 19, Margin = new Thickness(0,0,0,7) });
+        header.Children.Add(new TextBlock { Text = "Preview first. Select READY rows to merge. Duplicate games and failed checks are excluded.",
+            Foreground = Brushes.LightGray, Margin = new Thickness(0,0,0,12) });
+        var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); layout.Children.Add(footer);
+        var status = new TextBlock { Text = "Select Refresh to retrieve open pull requests.", Foreground = Brushes.LightGray, Margin = new Thickness(0,8,0,8) };
+        footer.Children.Add(status);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        footer.Children.Add(actions);
+        var refresh = new Button { Content = "Refresh / Preview", MinWidth = 135, Margin = new Thickness(5) };
+        var merge = new Button { Content = "Merge selected READY PRs", MinWidth = 185, Margin = new Thickness(5), IsEnabled = false };
+        var close = new Button { Content = "Close", MinWidth = 80, Margin = new Thickness(5) };
+        actions.Children.Add(refresh); actions.Children.Add(merge); actions.Children.Add(close);
+        var grid = new DataGrid {
+            AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Extended,
+            SelectionUnit = DataGridSelectionUnit.FullRow, CanUserAddRows = false,
+            Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(24,34,52)),
+            Foreground = Brushes.White, RowHeaderWidth = 0
+        };
+        grid.Columns.Add(new DataGridTextColumn { Header = "PR", Binding = new System.Windows.Data.Binding("Number"), Width = 55 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Status", Binding = new System.Windows.Data.Binding("Status"), Width = 90 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Author", Binding = new System.Windows.Data.Binding("Author"), Width = 150 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Game / Submission", Binding = new System.Windows.Data.Binding("Title"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Reason", Binding = new System.Windows.Data.Binding("Reason"), Width = 230 });
+        layout.Children.Add(grid);
+        var entries = new ObservableCollection<CataloguePrRow>();
+        grid.ItemsSource = entries;
+        grid.SelectionChanged += (_, _) => merge.IsEnabled = grid.SelectedItems.Cast<CataloguePrRow>().Any(p => p.Status == "READY");
+        string report = Path.Combine(Path.GetTempPath(), "buildmanager-catalogue-" + Guid.NewGuid().ToString("N") + ".json");
+        bool busy = false;
+        async Task RefreshAsync()
+        {
+            if (busy) return;
+            busy = true; refresh.IsEnabled = false; merge.IsEnabled = false;
+            status.Text = "Checking GitHub permissions, duplicates and validation…";
+            try {
+                if (File.Exists(report)) File.Delete(report);
+                int code = await ProcessRunner.RunAsync("powershell.exe",
+                    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-ReportPath", report],
+                    Path.GetDirectoryName(script)!, Log, CancellationToken.None);
+                if (code != 0 || !File.Exists(report)) throw new InvalidOperationException("Catalogue preview failed; inspect the Build Manager log.");
+                string json = await File.ReadAllTextAsync(report);
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<CataloguePrRow>>(json,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+                entries.Clear(); foreach (var row in parsed.OrderByDescending(p => p.Number)) entries.Add(row);
+                status.Text = $"{entries.Count} open PR(s); {entries.Count(p => p.Status == "READY")} ready. Ctrl+click to select multiple rows.";
+            } catch (Exception ex) { status.Text = "Preview failed: " + ex.Message; Log(status.Text); }
+            finally { busy = false; refresh.IsEnabled = true; }
+        }
+        refresh.Click += async (_, _) => await RefreshAsync();
+        merge.Click += async (_, _) => {
+            if (busy) return;
+            int[] numbers = grid.SelectedItems.Cast<CataloguePrRow>().Where(p => p.Status == "READY").Select(p => p.Number).Distinct().ToArray();
+            if (numbers.Length == 0) return;
+            if (MessageBox.Show(dialog, $"Administrator squash-merge {numbers.Length} selected PR(s): {string.Join(", ", numbers.Select(n => "#" + n))}?\n\nThis bypasses approval rules and cannot be undone automatically.",
+                "Confirm catalogue merges", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            busy = true; refresh.IsEnabled = false; merge.IsEnabled = false;
+            status.Text = "Merging selected pull requests; see Build Manager log…";
+            try {
+                var args = new List<string> { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-Apply", "-Confirm:$false", "-Numbers" };
+                args.Add(string.Join(",", numbers));
+                int code = await ProcessRunner.RunAsync("powershell.exe", args, Path.GetDirectoryName(script)!, Log, CancellationToken.None);
+                status.Text = code == 0 ? "Merge run completed. Refreshing…" : $"Merge run returned exit code {code}; inspect the log.";
+            } catch (Exception ex) { Log("Catalogue merge error: " + ex.Message); status.Text = ex.Message; }
+            finally { busy = false; refresh.IsEnabled = true; await RefreshAsync(); }
+        };
+        close.Click += (_, _) => dialog.Close();
+        dialog.Closed += (_, _) => { try { if (File.Exists(report)) File.Delete(report); } catch { } };
+        dialog.Show();
+        await RefreshAsync();
+    }
+
+    private sealed class CataloguePrRow
+    {
+        public int Number { get; set; }
+        public string Title { get; set; } = "";
+        public string Author { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string Reason { get; set; } = "";
+    }
+
     private void TorrentCatalogue_Click(object sender, RoutedEventArgs e)
     {
         OpenTorrentManager();
@@ -440,7 +538,7 @@ public static void ScanXnaReferences(string folder)
             var args = new List<string> { "msbuild", project.Path,
                 $"-p:Configuration={Value(ConfigBox)}", $"-p:Platform={Value(PlatformBox)}",
                 "-getProperty:TargetFramework,TargetFrameworks,Configuration,Platform,PlatformTarget,Platforms,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,BaseIntermediateOutputPath,ProjectAssetsFile" };
-            args.AddRange(_storage.BuildArguments(project.Path));
+            args.AddRange(_storage.BuildArguments(project.Path).Select(EscapeMsbuildPropertyArgument));
             await ProcessRunner.RunAsync("dotnet", args,
                 _storage.SdkWorkingDirectory(project.Path), Log, token);
         });
@@ -462,7 +560,7 @@ public static void ScanXnaReferences(string folder)
                 try
                 {
                     var report = await ConfigurationDiagnostics.InspectAsync(project, config, platform,
-                        target, framework, runtime, exe, Log, token, _storage.BuildArguments(project.Path),
+                        target, framework, runtime, exe, Log, token, _storage.BuildArguments(project.Path).Select(EscapeMsbuildPropertyArgument).ToList(),
                         exe == "dotnet" ? _storage.SdkWorkingDirectory(project.Path) : null);
                     foreach (var issue in report.Issues)
                         Log($"[{issue.Severity}] {issue.Code}: {issue.Detail}\\n  Suggested action: {issue.Recommendation}");
@@ -474,6 +572,23 @@ public static void ScanXnaReferences(string folder)
             }
         });
     }
+    // MSBuild treats commas and semicolons inside -p: values as property separators.
+    // Escape them for MSBuild's own parser (independent of Windows argument quoting).
+    private static string EscapeMsbuildPropertyArgument(string argument)
+    {
+        if (!(argument.StartsWith("-p:", StringComparison.OrdinalIgnoreCase) ||
+              argument.StartsWith("/p:", StringComparison.OrdinalIgnoreCase) ||
+              argument.StartsWith("-property:", StringComparison.OrdinalIgnoreCase) ||
+              argument.StartsWith("/property:", StringComparison.OrdinalIgnoreCase)))
+            return argument;
+
+        int equals = argument.IndexOf('=');
+        if (equals < 0) return argument;
+        string prefix = argument[..(equals + 1)];
+        string value = argument[(equals + 1)..];
+        return prefix + value.Replace(",", "%2C").Replace(";", "%3B");
+    }
+
     private async void Build_Click(object sender, RoutedEventArgs e)
     {
         var selected = Selected();
@@ -492,7 +607,7 @@ public static void ScanXnaReferences(string folder)
                 if (!vs) args.Add(action == "restore" ? "restore" : "build");
                 args.Add(project.Path);
                 _storage.Archive = Path.GetFullPath(RootBox.Text.Trim());
-                args.AddRange(_storage.BuildArguments(project.Path));
+                args.AddRange(_storage.BuildArguments(project.Path).Select(EscapeMsbuildPropertyArgument));
                 if (vs) args.Add(action switch { "rebuild" => "-t:Rebuild", "clean" => "-t:Clean", "restore" => "-t:Restore", _ => "-t:Build" });
                 else if (action == "rebuild") args.Add("-t:Rebuild");
                 else if (action == "clean") args.Add("-t:Clean");
@@ -513,7 +628,11 @@ public static void ScanXnaReferences(string folder)
                     Log("Note: DefineConstants overrides the project's evaluated symbols for this build.");
                 }
                 if (action != "restore" && !vs && NoRestoreBox.IsChecked == true) args.Add("--no-restore");
-                Log($"> {exe} {string.Join(" ", args)}");
+                // Apply MSBuild escaping to every property, including the layout paths.
+                // This prevents commas in game names from becoming extra properties.
+                for (int i = 0; i < args.Count; i++)
+                    args[i] = EscapeMsbuildPropertyArgument(args[i]);
+                Log($"> {exe} {string.Join(" ", args.Select(a => a.Contains(' ') ? "\"" + a + "\"" : a))}");
                 try
                 {
                     string workingDirectory = vs ? Path.GetDirectoryName(project.Path)! : _storage.SdkWorkingDirectory(project.Path);
@@ -770,7 +889,9 @@ public static void ScanXnaReferences(string folder)
             ("Storage selector", "Repair-XnaStorageSelector"), ("Open storage", "Repair-XnaOpenContainer"),
             ("Save games", "Repair-XnaStorageSave"), ("Load games", "Repair-XnaStorageLoad"),
             ("File access", "Repair-XnaFileStream"), ("Colors", "Repair-XnaColors"),
-            ("Gamer avatars", "Repair-XnaSignedInGamerAvatar"), ("Sprite drawing", "Repair-XnaSpriteBatch")
+            ("Gamer avatars", "Repair-XnaSignedInGamerAvatar"), ("Sprite drawing", "Repair-XnaSpriteBatch"),
+            ("XNA 3.x to FNA (Python 3.10+)", "Repair-Xna3"),
+            ("Scene capture (CRON, Avatar Insane Race 3D, Jet Pack War)", "Repair-CronBloom")
         };
         top.Children.Add(new TextBlock { Text = "Source repairs", Margin = new Thickness(0,8,0,4) });
         var fixerPanel = new WrapPanel(); top.Children.Add(fixerPanel);
@@ -834,6 +955,10 @@ public static void ScanXnaReferences(string folder)
         if (dialog.ShowDialog() != true) return;
         var selectedGames = games;
         var selectedFixers = fixerChecks.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToArray();
+        bool repairXna3 = selectedFixers.Contains("Repair-Xna3");
+        bool repairCronBloom = selectedFixers.Contains("Repair-CronBloom");
+        selectedFixers = selectedFixers.Where(fix => fix is not ("Repair-Xna3" or "Repair-CronBloom")).ToArray();
+        string xna3Script = Path.Combine(AppContext.BaseDirectory, "scripts", "repair_xna3.py");
         if (selectedFixers.Length > 0 && !File.Exists(script)) {
             var chooser = new OpenFileDialog { Title = "Choose XnaRepairFunctions.ps1",
                 Filter = "PowerShell (*.ps1)|*.ps1" };
@@ -907,9 +1032,21 @@ public static void ScanXnaReferences(string folder)
                 }
                 string encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(commands));
                 try {
-                    int exit = await ProcessRunner.RunAsync("powershell.exe",
-                        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
-                        game.Folder, Log, token);
+                    int exit = 0;
+                    if (repairXna3 || repairCronBloom) {
+                        if (!File.Exists(xna3Script))
+                            throw new FileNotFoundException("XNA 3.x repair script is missing.", xna3Script);
+                        var arguments = new List<string> { "-3", "-X", "utf8", xna3Script, game.Folder };
+                        if (repairXna3) arguments.Add("--convert-xna3");
+                        if (repairCronBloom) arguments.Add("--cron-bloom");
+                        if (whatIf) arguments.Add("--preview");
+                        exit = await ProcessRunner.RunAsync("py.exe", arguments, game.Folder, Log, token);
+                    }
+                    if (exit == 0 && (selectedFixers.Length > 0 || selectedSdkFixers.Length > 0)) {
+                        exit = await ProcessRunner.RunAsync("powershell.exe",
+                            ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+                            game.Folder, Log, token);
+                    }
                     if (exit == 0) succeeded++; else { failed++; Log($"FAILED: {game.Name} (exit {exit})"); }
                 }
                 catch (OperationCanceledException) { throw; }

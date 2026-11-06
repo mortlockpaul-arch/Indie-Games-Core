@@ -26,6 +26,7 @@
        <Button Style="{StaticResource ToolbarButton}" Content="Share Both…" Click="ShareBoth_Click"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Games / Ports…" Click="PlayableGames_Click"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Catalogue…" Click="TorrentCatalogue_Click"/>
+       <Button Style="{StaticResource ToolbarButton}" Content="Merge Catalogue PRs…" Click="MergeCatalogue_Click" ToolTip="Preview and safely merge validated catalogue pull requests as repository administrator"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Quit…" Click="Quit_Click">
         <Button.ContextMenu>
          <ContextMenu Placement="Bottom">

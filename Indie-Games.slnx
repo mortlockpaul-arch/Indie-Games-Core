@@ -60,10 +60,6 @@
   </Folder>
   <Folder Name="/Indie Games/" />
   <Folder Name="/indie-game-archive/">
-    <Project Path="D:/indie-game-archive/$1 Zombie Game, The (World) (XBLIG)/$1 Zombie Game, The (World) (XBLIG).csproj">
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
     <Project Path="D:/indie-game-archive/Head Shot Z (World) (XBLIG)/Head Shot Z (World) (XBLIG).csproj">
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
@@ -77,22 +73,6 @@
       <Platform Solution="*|x86" Project="x86" />
     </Project>
     <Project Path="D:/indie-game-archive/Try Not to Fart (World) (XBLIG)/Try Not to Fart (World) (XBLIG).csproj">
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
-    <Project Path="D:/indie-game-archive/Adamant Ants (World) (XBLIG)/Adamant Ants (World) (XBLIG).csproj">
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
-    <Project Path="D:/indie-game-archive/21 Ball Snooker LIVE (World) (XBLIG)/21 Ball Snooker LIVE (World) (XBLIG).csproj">
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
-    <Project Path="D:/indie-game-archive/21 Ball Snooker Champion (World) (XBLIG)/21 Ball Snooker Champion (World) (XBLIG).csproj">
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
-    <Project Path="D:/indie-game-archive/9 Ball Pool Champion (World) (XBLIG)/9 Ball Pool Champion (World) (XBLIG).csproj">
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
