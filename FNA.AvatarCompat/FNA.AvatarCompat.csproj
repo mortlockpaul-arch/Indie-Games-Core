@@ -8,13 +8,13 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FNA\FNA.csproj" />
+    <ProjectReference Include="..\FNA\FNA.Core.csproj" />
   </ItemGroup>
 	<ItemGroup>
 		<Compile Include="..\FNA.NetStub\src\Avatar\**\*.cs"
 				 Link="Avatar\%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 	<ItemGroup>
-		<ProjectReference Include="..\FNA.Steamworks\FNA.Steamworks.csproj" />
+		<ProjectReference Include="..\FNA.Steamworks\FNA.Steamworks.net9.csproj" />
 	</ItemGroup>
 </Project>

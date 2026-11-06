@@ -24,16 +24,8 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="Release|x86" Project="x86" />
     </Project>
-    <Project Path="FNA.Steamworks/FNA.Steamworks.csproj" Id="d8c600cb-25a2-4e5c-a6eb-1330183a3fba">
-      <BuildType Project="WindowsDebug" />
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="Release|x86" Project="x86" />
-    </Project>
-    <Project Path="FNA.Steamworks/Steamworks.NET/Standalone/Steamworks.NET.csproj" Id="b3543600-587c-4fdc-994a-cb0bdc629a7e">
-      <BuildType Project="Windows" />
-      <Platform Solution="*|x64" Project="x64" />
-      <Platform Solution="*|x86" Project="x86" />
-    </Project>
+    <Project Path="FNA.Steamworks/FNA.Steamworks.net9.csproj" />
+    <Project Path="FNA.Steamworks/Steamworks.NET/Standalone/Steamworks.NET.net9.csproj" />
     <Project Path="FNA/FNA.Core.csproj" />
     <Project Path="FNA/FNA.csproj" Id="35253ce1-c864-4cd3-8249-4d1319748e8f">
       <Platform Solution="*|x64" Project="x64" />
