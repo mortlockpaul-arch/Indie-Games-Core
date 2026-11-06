@@ -2,6 +2,9 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <PropertyGroup>
+    <!-- FNA installs its native DLL resolver before the first platform import. -->
+    <NoWarn Condition="'$(MSBuildProjectName)' == 'FNA.Core'">$(NoWarn);CA2255</NoWarn>
+
     <!-- Resolve the repository root from this props file -->
     <FNARoot>$(MSBuildThisFileDirectory)</FNARoot>
 

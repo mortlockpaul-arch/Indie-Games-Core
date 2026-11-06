@@ -45,6 +45,7 @@
          <TextBlock x:Name="GameSelectionCount" Text="Select games to build or repair" Foreground="#93C5FD" Margin="4"/>
           <Button Content="Check Architecture" Click="Detect_Click" ToolTip="Check configuration and compiled DLL architectures for selected rows"/>
           <Button Content="Open Folder" x:Name="OpenSelectedFolderButton" Click="OpenSelectedFolder_Click" IsEnabled="False"/>
+          <Button Content="Bump Version…" x:Name="BumpVersionButton" Click="BumpVersion_Click" IsEnabled="False" ToolTip="Set the executable version for the selected game. Rebuild to apply it."/>
           <Button x:Name="AddToSolutionButton" Content="Add to Solution" Click="AddToSolution_Click" IsEnabled="False"/>
           <Button x:Name="RemoveFromSolutionButton" Content="Remove from Solution" Click="RemoveFromSolution_Click" IsEnabled="False" ToolTip="Remove selected project entries from the solution; keep all project and game files"/>
           <Button Content="Settings…" Click="Storage_Click" ToolTip="Configure the solution path and library folders"/>

@@ -590,6 +590,7 @@ public static void ScanXnaReferences(string folder)
         GameSelectionCount.Text = selected.Count == 0 ? "Select games to build or repair" :
             $"{selected.Count} game{(selected.Count == 1 ? "" : "s")} selected";
         OpenSelectedFolderButton.IsEnabled = project != null;
+        BumpVersionButton.IsEnabled = selected.Count == 1;
         AddToSolutionButton.IsEnabled = selected.Count > 0;
         RemoveFromSolutionButton.IsEnabled = selected.Count > 0;
         SelectedGameName.Text = project?.Name ?? "No game selected";
@@ -610,6 +611,64 @@ public static void ScanXnaReferences(string folder)
         if (!Directory.Exists(folder)) { Log($"Folder not found: {folder}"); return; }
         try { Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
         catch (Exception ex) { Log($"Could not open folder: {ex.Message}"); }
+    }
+
+    private void BumpVersion_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cts != null) { Log("Wait for the current operation to finish before changing the version."); return; }
+        var selected = Selected();
+        if (selected.Count != 1) return;
+        var project = selected[0];
+        Version current;
+        try { current = ProjectVersionUpdater.Read(project.Path); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Game version", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+
+        var dialog = new Window
+        {
+            Title = $"Bump Version — {project.Name}",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Background = Background,
+            Foreground = Foreground
+        };
+        var content = new StackPanel { Margin = new Thickness(18) };
+        content.Children.Add(new TextBlock { Text = $"Current version: {current}" });
+        content.Children.Add(new TextBlock { Text = "New executable version", Margin = new Thickness(0, 12, 0, 4) });
+        var version = new TextBox
+        {
+            Text = current.Build < ushort.MaxValue
+                ? $"{current.Major}.{current.Minor}.{Math.Max(0, current.Build) + 1}"
+                : current.ToString()
+        };
+        content.Children.Add(version);
+        content.Children.Add(new TextBlock { Text = "Rebuild the game to apply the new version.", Margin = new Thickness(0, 8, 0, 0) });
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+        var save = new Button { Content = "Save Version", IsDefault = true, MinWidth = 105, Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 75 };
+        buttons.Children.Add(save);
+        buttons.Children.Add(cancel);
+        content.Children.Add(buttons);
+        save.Click += (_, _) =>
+        {
+            try
+            {
+                ProjectVersionUpdater.Apply(project.Path, version.Text);
+                project.Status = "Version saved; rebuild";
+                Log($"Saved executable version {version.Text.Trim()} for {project.Name}. Rebuild to apply it.");
+                dialog.DialogResult = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(dialog, ex.Message, "Game version", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        };
+        dialog.Content = content;
+        dialog.Loaded += (_, _) => { version.Focus(); version.SelectAll(); };
+        dialog.ShowDialog();
     }
 
     private void UpdateSolutionLabel()
