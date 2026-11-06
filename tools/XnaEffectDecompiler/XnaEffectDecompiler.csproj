@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><PlatformTarget>x64</PlatformTarget><EnableDefaultCompileItems>false</EnableDefaultCompileItems><FnaAssembly Condition="'$(FnaAssembly)' == ''">$(MSBuildThisFileDirectory)..\..\FNA.Contents\bin\x64\Debug\net9.0-windows\FNA.dll</FnaAssembly></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><PlatformTarget>x64</PlatformTarget><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
     <ProjectReference Include="Vendor/HlslDecompiler/HlslDecompiler.csproj" />
-    <Reference Include="FNA"><HintPath>$(FnaAssembly)</HintPath></Reference>
+    <ProjectReference Include="../../FNA/FNA.Core.csproj" Condition="'$(FnaAssembly)' == ''" />
+    <Reference Include="FNA" Condition="'$(FnaAssembly)' != ''"><HintPath>$(FnaAssembly)</HintPath></Reference>
     <None Include="../../FNA/licenses/*" Link="FNA-licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Vendor/HlslDecompiler/LICENSE" Link="HlslDecompiler-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="UPSTREAM.txt" CopyToOutputDirectory="PreserveNewest" />
