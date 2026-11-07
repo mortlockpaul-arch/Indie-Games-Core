@@ -1,4 +1,4 @@
-ï»¿using IndieGames.BuildManager.Models;
+using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
@@ -103,12 +103,12 @@ public static void ScanXnaReferences(string folder)
         string root=RootBox.Text.Trim();
         _projects.Clear();
         FolderScanProgress.IsIndeterminate=true; FolderScanProgress.Value=0; CancelScanButton.IsEnabled=true;
-        FolderScanStatus.Text="Scanning Foldersâ€¦";
+        FolderScanStatus.Text="Scanning Folders…";
         var progress=new Progress<ProjectScanProgress>(p=> {
             if (_scanCts != scan || scan.IsCancellationRequested) return;
             FolderScanProgress.IsIndeterminate=p.Discovering;
             FolderScanProgress.Maximum=Math.Max(1,p.TotalFolders); FolderScanProgress.Value=p.FoldersScanned;
-            FolderScanStatus.Text=p.Discovering ? $"Scanning Foldersâ€¦ {p.FoldersScanned:N0} Scanned Â· {p.ProjectsFound:N0} Projects" : $"Scanning Folders: {p.FoldersScanned:N0} / {p.TotalFolders:N0} Â· {p.ProjectsFound:N0} Projects";
+            FolderScanStatus.Text=p.Discovering ? $"Scanning Folders… {p.FoldersScanned:N0} Scanned · {p.ProjectsFound:N0} Projects" : $"Scanning Folders: {p.FoldersScanned:N0} / {p.TotalFolders:N0} · {p.ProjectsFound:N0} Projects";
             FolderScanStatus.ToolTip=p.Folder;
         });
         try
@@ -123,7 +123,7 @@ public static void ScanXnaReferences(string folder)
             }
             await RefreshSolutionMembershipAsync(true);
             FolderScanProgress.IsIndeterminate=false; FolderScanProgress.Value=FolderScanProgress.Maximum;
-            FolderScanStatus.Text=$"Scan Complete Â· {_projects.Count:N0} Projects"; Log($"Found {_projects.Count} projects.");
+            FolderScanStatus.Text=$"Scan Complete · {_projects.Count:N0} Projects"; Log($"Found {_projects.Count} projects.");
         }
         catch (OperationCanceledException) { if (_scanCts == scan) FolderScanStatus.Text="Scan Cancelled"; }
         catch (Exception ex) { if (_scanCts == scan) { FolderScanStatus.Text="Scan Failed: "+ex.Message; Log(FolderScanStatus.Text); } }
@@ -238,7 +238,7 @@ public static void ScanXnaReferences(string folder)
         {
             if (busy) return;
             busy = true; refresh.IsEnabled = false; merge.IsEnabled = false;
-            status.Text = "Checking GitHub permissions, duplicates and validationâ€¦";
+            status.Text = "Checking GitHub permissions, duplicates and validation…";
             try {
                 if (File.Exists(report)) File.Delete(report);
                 int code = await ProcessRunner.RunAsync("powershell.exe",
@@ -261,12 +261,12 @@ public static void ScanXnaReferences(string folder)
             if (MessageBox.Show(dialog, $"Administrator squash-merge {numbers.Length} selected PR(s): {string.Join(", ", numbers.Select(n => "#" + n))}?\n\nThis bypasses approval rules and cannot be undone automatically.",
                 "Confirm catalogue merges", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             busy = true; refresh.IsEnabled = false; merge.IsEnabled = false;
-            status.Text = "Merging selected pull requests; see Build Manager logâ€¦";
+            status.Text = "Merging selected pull requests; see Build Manager log…";
             try {
                 var args = new List<string> { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-Apply", "-Confirm:$false", "-Numbers" };
                 args.Add(string.Join(",", numbers));
                 int code = await ProcessRunner.RunAsync("powershell.exe", args, Path.GetDirectoryName(script)!, Log, CancellationToken.None);
-                status.Text = code == 0 ? "Merge run completed. Refreshingâ€¦" : $"Merge run returned exit code {code}; inspect the log.";
+                status.Text = code == 0 ? "Merge run completed. Refreshing…" : $"Merge run returned exit code {code}; inspect the log.";
             } catch (Exception ex) { Log("Catalogue merge error: " + ex.Message); status.Text = ex.Message; }
             finally { busy = false; refresh.IsEnabled = true; await RefreshAsync(); }
         };
@@ -660,8 +660,8 @@ public static void ScanXnaReferences(string folder)
                     string workingDirectory = vs ? Path.GetDirectoryName(project.Path)! : _storage.SdkWorkingDirectory(project.Path);
                     int code = await ProcessRunner.RunAsync(exe, args, workingDirectory, BuildOutput, token);
                     project.Status = code == 0
-                        ? $"{operation} succeeded ({context}); {warnings.Count} warning(s)" + (action == "clean" ? "; outputs cleaned â€” rebuild before running" : "")
-                        : $"{operation} failed ({context}); exit {code}, {errors.Count} error(s), {warnings.Count} warning(s) â€” see build log";
+                        ? $"{operation} succeeded ({context}); {warnings.Count} warning(s)" + (action == "clean" ? "; outputs cleaned — rebuild before running" : "")
+                        : $"{operation} failed ({context}); exit {code}, {errors.Count} error(s), {warnings.Count} warning(s) — see build log";
                 }
                 catch (OperationCanceledException) { project.Status = $"{operation} cancelled ({context})"; throw; }
                 catch (Exception ex) { project.Status = $"{operation} failed ({context}): {ex.GetBaseException().Message}"; throw; }
@@ -711,7 +711,7 @@ public static void ScanXnaReferences(string folder)
         var selected=Selected();if(selected.Count==0){Log("Select one or more game rows first.");return;}
         string core=Path.GetDirectoryName(Path.GetFullPath(_storage.Solution))!;
         await ExecuteAsync(async token=>{
-            foreach(var game in selected){token.ThrowIfCancellationRequested();try{var result=await Task.Run(()=>GameOverlayInstaller.Install(game.Path,core,token),token);Log($"{game.Name}: {result.Status} â€” {result.Message}");if(result.Backup!=null)Log("Overlay backup: "+result.Backup);}catch(OperationCanceledException){throw;}catch(Exception ex){Log($"{game.Name}: overlay installation failed â€” {ex.GetBaseException().Message}");}}
+            foreach(var game in selected){token.ThrowIfCancellationRequested();try{var result=await Task.Run(()=>GameOverlayInstaller.Install(game.Path,core,token),token);Log($"{game.Name}: {result.Status} — {result.Message}");if(result.Backup!=null)Log("Overlay backup: "+result.Backup);}catch(OperationCanceledException){throw;}catch(Exception ex){Log($"{game.Name}: overlay installation failed — {ex.GetBaseException().Message}");}}
         });
     }
     private void ConvertXnaBinary_Click(object sender, RoutedEventArgs e) => new XnaConversionWindow(_storage, Selected().FirstOrDefault()?.Path) { Owner=this }.ShowDialog();
@@ -742,9 +742,9 @@ public static void ScanXnaReferences(string folder)
             Path.GetDirectoryName(Path.GetFullPath(project.Path))!;
         SelectedGameFolderBox.ToolTip = SelectedGameFolderBox.Text;
         SelectedGameDetails.Text = project == null ? "" :
-            $"{Path.GetFileName(project.Path)} Â· {Display(project.TargetFramework)} Â· {Display(project.PlatformTarget)}" +
-            (string.IsNullOrWhiteSpace(project.RuntimeIdentifier) ? "" : $" Â· {project.RuntimeIdentifier}") +
-            (selected.Count > 1 ? $" Â· +{selected.Count - 1} other selected" : "");
+            $"{Path.GetFileName(project.Path)} · {Display(project.TargetFramework)} · {Display(project.PlatformTarget)}" +
+            (string.IsNullOrWhiteSpace(project.RuntimeIdentifier) ? "" : $" · {project.RuntimeIdentifier}") +
+            (selected.Count > 1 ? $" · +{selected.Count - 1} other selected" : "");
         static string Display(string value) => string.IsNullOrWhiteSpace(value) ? "Project default" : value;
     }
 
@@ -769,7 +769,7 @@ public static void ScanXnaReferences(string folder)
 
         var dialog = new Window
         {
-            Title = $"Bump Version â€” {project.Name}",
+            Title = $"Bump Version — {project.Name}",
             Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Width = 420,
@@ -817,7 +817,7 @@ public static void ScanXnaReferences(string folder)
 
     private void UpdateSolutionLabel()
     {
-        SelectedSolutionName.Text = string.IsNullOrWhiteSpace(_storage.Solution) ? "Set solution in settings" : Path.GetFileName(_storage.Solution) + " Â· green rows are in the solution";
+        SelectedSolutionName.Text = string.IsNullOrWhiteSpace(_storage.Solution) ? "Set solution in settings" : Path.GetFileName(_storage.Solution) + " · green rows are in the solution";
         SelectedSolutionName.ToolTip = _storage.Solution;
         EffectsScriptBox.Text = _storage.ScriptPath("Convert-XnbEffects.ps1");
         ScriptBox.Text = _storage.ScriptPath("fix_sdk1005.ps1");
@@ -1213,7 +1213,7 @@ public static void ScanXnaReferences(string folder)
                 Log(code switch
                 {
                     0 => "Audio converted. Rebuild the game to copy updated content to bin.",
-                    2 => "Skipped: no Song or SoundEffect XNBs. Use Repairs â†’ Wave banks for XACT wave banks.",
+                    2 => "Skipped: no Song or SoundEffect XNBs. Use Repairs → Wave banks for XACT wave banks.",
                     _ => "Audio conversion had failures. Review the log and audio-conversion report."
                 });
             }
