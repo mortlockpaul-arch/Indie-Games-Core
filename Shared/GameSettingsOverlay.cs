@@ -30,6 +30,8 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     readonly int[] advances = new int[128];
     KeyboardState previousKeys;
     MouseState previousMouse;
+    readonly GamePadState[] previousPads = new GamePadState[4];
+    bool controllerConnected;
     int selected, resolutionIndex;
     int infoScroll, logScroll, gameSelection;
     bool startupLog;
@@ -73,7 +75,7 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
         batch=new SpriteBatch(GraphicsDevice);pixel=new Texture2D(GraphicsDevice,1,1);pixel.SetData(new[]{Color.White});
         using var bitmap=new Drawing.Bitmap(1024,256,Drawing.Imaging.PixelFormat.Format32bppArgb);
         using(var g=Drawing.Graphics.FromImage(bitmap))
-        using(var font=new Drawing.Font("Segoe UI",16,Drawing.FontStyle.Regular,Drawing.GraphicsUnit.Pixel))
+        using(var font=new Drawing.Font("Segoe UI",18,Drawing.FontStyle.Regular,Drawing.GraphicsUnit.Pixel))
         {
             g.Clear(Drawing.Color.Transparent);g.TextRenderingHint=Drawing.Text.TextRenderingHint.AntiAliasGridFit;
             for(int c=32;c<128;c++)
@@ -97,12 +99,26 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     public override void Update(GameTime gameTime)
     {
         var keys=Keyboard.GetState();var mouse=Mouse.GetState();
-        bool Press(Keys key)=>keys.IsKeyDown(key)&&previousKeys.IsKeyUp(key);
+        var pads=Enumerable.Range(0,4).Select(i=>GamePad.GetState((PlayerIndex)i)).ToArray();
+        controllerConnected=pads.Any(p=>p.IsConnected);
+        bool Pad(Buttons button)=>Enumerable.Range(0,4).Any(i=>pads[i].IsConnected && pads[i].IsButtonDown(button) && !previousPads[i].IsButtonDown(button));
+        bool Stick(int axis,int direction)=>Enumerable.Range(0,4).Any(i=>pads[i].IsConnected && (axis==0?pads[i].ThumbSticks.Left.X:pads[i].ThumbSticks.Left.Y)*direction>.55f && (axis==0?previousPads[i].ThumbSticks.Left.X:previousPads[i].ThumbSticks.Left.Y)*direction<=.55f);
+        bool Press(Keys key)=>keys.IsKeyDown(key)&&previousKeys.IsKeyUp(key) || key switch {
+            Keys.Up=>Pad(Buttons.DPadUp)||Stick(1,1), Keys.Down=>Pad(Buttons.DPadDown)||Stick(1,-1),
+            Keys.Left=>Pad(Buttons.DPadLeft)||Stick(0,-1), Keys.Right=>Pad(Buttons.DPadRight)||Stick(0,1),
+            Keys.Enter=>Pad(Buttons.A), Keys.Escape=>Pad(Buttons.B), Keys.F1=>Pad(Buttons.Start), Keys.F2=>IsOpen&&Pad(Buttons.X), _=>false };
         if(Game.IsActive && (Press(Keys.F1)||IsOpen&&Press(Keys.Escape))) SetOpen(!IsOpen);
         if(Game.IsActive && Press(Keys.F2)){DebugHud=!DebugHud;Save();}
         if(Game.IsActive && IsOpen)
         {
-            if(Press(Keys.Tab)){Page=(OverlayPage)(((int)Page+1)%(Games.Count>0?4:3));infoScroll=logScroll=0;}
+            int pageCount=Games.Count>0?4:3;
+            if(Press(Keys.Tab)||Pad(Buttons.RightShoulder)){Page=(OverlayPage)(((int)Page+1)%pageCount);infoScroll=logScroll=0;}
+            if(Pad(Buttons.LeftShoulder)){Page=(OverlayPage)(((int)Page+pageCount-1)%pageCount);infoScroll=logScroll=0;}
+            if(Pad(Buttons.Y)) {
+                if(Page==OverlayPage.Settings)Apply(Resolutions[resolutionIndex].X,Resolutions[resolutionIndex].Y,graphics.IsFullScreen);
+                else if(Page==OverlayPage.Info)ExportReport();
+                else if(Page==OverlayPage.Logs){startupLog=!startupLog;logScroll=0;}
+            }
             if(Page==OverlayPage.Settings)
             {
                 if(Press(Keys.Up))selected=(selected+7)%8;
@@ -128,7 +144,7 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
                 foreach(var action in actions)if(action.Bounds.Contains(point)){action.Click();break;}
             }
         }
-        previousKeys=keys;previousMouse=mouse;base.Update(gameTime);
+        previousKeys=keys;previousMouse=mouse;Array.Copy(pads,previousPads,4);base.Update(gameTime);
     }
     public void SetOpen(bool open)
     {
@@ -183,12 +199,33 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
         Rect(new Rectangle(r.X,r.Y+8,r.Width,r.Height-16),color);
         for(int y=0;y<8;y++){int inset=8-(int)Math.Sqrt(64-(8-y)*(8-y));Rect(new Rectangle(r.X+inset,r.Y+y,r.Width-inset*2,1),color);Rect(new Rectangle(r.X+inset,r.Bottom-1-y,r.Width-inset*2,1),color);}
     }
+    static readonly Color Accent = new(157, 242, 105);
+    void Frost(Rectangle bounds, bool focused=false)
+    {
+        Round(new Rectangle(bounds.X,bounds.Y+3,bounds.Width,bounds.Height),Glass(0,0,0,50));
+        Round(bounds,focused?Glass(82,127,74,210):Glass(92,110,116,80));
+        Round(new Rectangle(bounds.X+1,bounds.Y+1,bounds.Width-2,bounds.Height-2),focused?Glass(28,58,35,205):Glass(23,34,39,156));
+        Rect(new Rectangle(bounds.X+10,bounds.Y+1,bounds.Width-20,1),focused?Glass(191,255,163,155):Glass(220,242,247,60));
+        if(focused)Rect(new Rectangle(bounds.X+1,bounds.Y+9,3,bounds.Height-18),Accent);
+    }
+    void FrostedBackdrop()
+    {
+        batch!.Begin(SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,DepthStencilState.None,RasterizerState.CullNone);
+        if(GameCanvas.LastFrame is { IsDisposed:false } frame)
+        {
+            var destination=GameCanvas.LastDestination;
+            foreach(var offset in new[]{new Point(-5,-5),new Point(0,-5),new Point(5,-5),new Point(-5,0),new Point(5,0),new Point(-5,5),new Point(0,5),new Point(5,5)})
+                batch.Draw(frame,new Rectangle(destination.X+offset.X,destination.Y+offset.Y,destination.Width,destination.Height),Color.White*.16f);
+        }
+        Rect(GraphicsDevice.Viewport.Bounds,Glass(5,12,14,115));
+        batch.End();
+    }
     void Text(string text,int x,int y,Color color,float scale=1)
     {
-        DrawText(text,x-1,y,Color.Black,scale);
-        DrawText(text,x+1,y,Color.Black,scale);
-        DrawText(text,x,y-1,Color.Black,scale);
-        DrawText(text,x,y+1,Color.Black,scale);
+        DrawText(text,x+2,y+2,Color.Black * .8f,scale);
+        for (int dy=-1;dy<=1;dy++)
+            for (int dx=-1;dx<=1;dx++)
+                if (dx!=0 || dy!=0) DrawText(text,x+dx,y+dy,Color.Black,scale);
         DrawText(text,x,y,color,scale);
     }
     void DrawText(string text,int x,int y,Color color,float scale)
@@ -197,14 +234,40 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     }
     void DrawHint()
     {
-        const string label = "F1  Settings";
+        string label = controllerConnected ? "MENU / F1  Settings" : "F1  Settings";
         const float scale = .9f;
         int textWidth = label.Sum(c => (int)(advances[c] * scale));
         int width = textWidth + 24;
         int x = Math.Max(0,GraphicsDevice.Viewport.Width-width-16);
         int y = Math.Max(0,GraphicsDevice.Viewport.Height-38);
-        Round(new Rectangle(x,y,width,28),Glass(16,25,40,150));
+        Round(new Rectangle(x,y,width,28),Glass(15,29,24,200));
+        Rect(new Rectangle(x+1,y+7,2,14),Accent);
         Text(label,x+(width-textWidth)/2,y+4,Color.LightGray,scale);
+    }
+    void ControllerIcon(string label,int x,int y,Color tint)
+    {
+        if(label.Length==1) {
+            for(int row=-11;row<=11;row++) {
+                int half=(int)Math.Sqrt(121-row*row);
+                Rect(new Rectangle(x+12-half,y+12+row,half*2+1,1),Glass(tint.R,tint.G,tint.B,190));
+                if(half>1)Rect(new Rectangle(x+13-half,y+12+row,half*2-1,1),Glass(12,20,19,245));
+            }
+            Text(label,x+7,y+3,tint,.8f);
+        } else {
+            Round(new Rectangle(x,y+1,32,23),Glass(190,217,204,130));
+            Round(new Rectangle(x+1,y+2,30,21),Glass(22,32,29,240));
+            Text(label,x+5,y+3,Color.White,.65f);
+        }
+    }
+    void ControllerHints()
+    {
+        int y=447;
+        ControllerIcon("A",28,y,new Color(126,228,114));Text("Select",57,y+3,Color.White,.75f);
+        ControllerIcon("B",119,y,new Color(255,125,123));Text("Resume",148,y+3,Color.White,.75f);
+        ControllerIcon("X",221,y,new Color(116,191,255));Text("HUD",250,y+3,Color.White,.75f);
+        ControllerIcon("Y",305,y,new Color(255,220,108));Text(Page==OverlayPage.Info?"Report":Page==OverlayPage.Logs?"Log view":"Apply",334,y+3,Color.White,.75f);
+        ControllerIcon("LB",415,y,Color.White);ControllerIcon("RB",452,y,Color.White);Text("Tabs",491,y+3,Color.White,.75f);
+        Text("D-pad / stick: move",553,y+3,Color.LightGray,.7f);
     }
     void TextFit(string text,int x,int y,Color color,float scale=1,int width=700)
     {
@@ -213,7 +276,7 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
     }
     void Button(string label,Rectangle bounds,Action action,bool active=false)
     {
-        var mouse=Mouse.GetState();Round(bounds,active||bounds.Contains(ToPanel(mouse.X,mouse.Y))?Glass(56,117,183,210):Glass(65,82,107,150));TextFit(label,bounds.X+12,bounds.Y+10,Color.White,.9f,bounds.Width-20);actions.Add((bounds,action));
+        var mouse=Mouse.GetState();Frost(bounds,active||bounds.Contains(ToPanel(mouse.X,mouse.Y)));TextFit(label,bounds.X+12,bounds.Y+8,Color.White,bounds.Width<=110?.8f:.9f,bounds.Width-12);actions.Add((bounds,action));
     }
     static string ReadCpuName()
     {
@@ -261,12 +324,20 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
             {
                 batch.Begin(SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,DepthStencilState.None,RasterizerState.CullNone);
                 if(ShowHint)DrawHint();
-                if(DebugHud){Round(new Rectangle(12,12,390,52),Glass(12,20,32,190));TextFit(metrics.Current.Summary,22,21,Color.White,.78f,370);TextFit(metrics.Current.Gpu,22,42,Color.LightSkyBlue,.73f,370);}
+                if(DebugHud){Round(new Rectangle(12,12,390,52),Glass(12,20,32,190));TextFit(metrics.Current.Summary,22,21,Color.White,.78f,370);TextFit(metrics.Current.Gpu,22,42,Accent,.73f,370);}
                 batch.End();return;
             }
+            FrostedBackdrop();
             actions.Clear();batch.Begin(SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,DepthStencilState.None,RasterizerState.CullNone,null,Matrix.CreateScale(Scale)*Matrix.CreateTranslation(Offset.X,Offset.Y,0));
-            Round(new Rectangle(7,10,760,510),Glass(0,0,0,95));Round(new Rectangle(0,0,760,510),Glass(15,24,40,225));Rect(new Rectangle(15,0,730,1),Glass(190,225,255,120));
-            TextFit(GameTitle,28,20,Color.White,1.25f);Text("GAME SETTINGS",28,57,Color.LightSkyBlue);
+            Round(new Rectangle(-8,10,776,514),Glass(0,0,0,60));
+            Round(new Rectangle(0,0,760,510),Glass(163,192,190,80));
+            Round(new Rectangle(1,1,758,508),Glass(18,30,31,219));
+            for(int y=10;y<84;y++)Rect(new Rectangle(10,y,740,1),Glass(172,213,206,(int)(18*(1-(y-10)/74f))));
+            Rect(new Rectangle(20,0,720,1),Glass(225,255,238,135));
+            Rect(new Rectangle(28,86,704,1),Glass(210,245,219,45));
+            Rect(new Rectangle(28,86,88,2),Accent);
+            for(int y=112;y<500;y+=13)for(int x=14;x<748;x+=19)Rect(new Rectangle(x+(y%7),y,1,1),Glass(225,250,245,9));
+            TextFit(GameTitle,28,20,Color.White,1.25f,580);Button("Close",new Rectangle(638,14,96,30),()=>SetOpen(false));Text("GAME SETTINGS",28,57,Accent);
             int tabX = Games.Count>0 ? 326 : 430;
             Button("Settings",new Rectangle(tabX,48,96,35),()=>Page=OverlayPage.Settings,Page==OverlayPage.Settings);
             Button("Info",new Rectangle(tabX+104,48,96,35),()=>Page=OverlayPage.Info,Page==OverlayPage.Info);
@@ -281,27 +352,27 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
             for(int i=0;i<labels.Length;i++)
             {
                 int index=i;var row=new Rectangle(26,96+i*45,708,38);bool hover=row.Contains(mouse);
-                Round(row,i==selected||hover?Glass(56,117,183,200):Glass(65,82,107,125));Text(labels[i],42,row.Y+11,Color.White);Text(values[i],440,row.Y+11,Color.White);
+                Frost(row,i==selected||hover);Text(labels[i],42,row.Y+11,Color.White);Text(values[i],440,row.Y+11,Color.White);
                 if(i is 0 or 2)
                 {
                     var minus=new Rectangle(636,row.Y+5,38,32);var plus=new Rectangle(682,row.Y+5,38,32);
-                    Round(minus,Glass(100,130,165,125));Round(plus,Glass(100,130,165,125));Text("-",650,row.Y+11,Color.White);Text("+",695,row.Y+11,Color.White);
+                    Frost(minus);Frost(plus);Text("-",650,row.Y+11,Color.White);Text("+",695,row.Y+11,Color.White);
                     actions.Add((minus,()=>{selected=index;Change(-1);}));actions.Add((plus,()=>{selected=index;Change(1);}));
                 }
                 actions.Add((row,()=>{selected=index;Change(1);}));
             }
-            Button("Apply resolution",new Rectangle(26,335,224,38),()=>{selected=5;Change(1);},selected==5);Button("Resume game",new Rectangle(268,335,224,38),()=>SetOpen(false),selected==6);Button("Exit game",new Rectangle(510,335,224,38),()=>Game.Exit(),selected==7);
+            Button("Apply resolution",new Rectangle(26,335,224,38),()=>{selected=5;Change(1);},selected==5);Button("Resume game",new Rectangle(268,335,224,38),()=>SetOpen(false),selected==6);Button("Quit game",new Rectangle(510,335,224,38),()=>Game.Exit(),selected==7);
             string controller="No controller detected";for(int i=0;i<4;i++)if(GamePad.GetState((PlayerIndex)i).IsConnected){controller="Controller connected: slot "+(i+1);break;}
-            Text(controller,28,392,Color.LightSkyBlue);TextFit(metrics.Current.Summary,28,421,Color.LightGray,.9f);Text("Tab: switch pages | F2: HUD | F1 / Escape: resume",28,450,Color.LightGray,.85f);
+            Text(controller,28,392,Accent);TextFit(metrics.Current.Summary,28,421,Color.LightGray,.9f);
             }
             else if(Page==OverlayPage.Info)
             {
-                var lines=InfoLines();infoScroll=Math.Clamp(infoScroll,0,Math.Max(0,lines.Length-11));for(int i=0;i<11&&infoScroll+i<lines.Length;i++)TextFit(lines[infoScroll+i],28,106+i*26,i<3?Color.LightSkyBlue:Color.White,.85f);
+                var lines=InfoLines();infoScroll=Math.Clamp(infoScroll,0,Math.Max(0,lines.Length-11));for(int i=0;i<11&&infoScroll+i<lines.Length;i++)TextFit(lines[infoScroll+i],28,106+i*26,i<3?Accent:Color.White,.85f);
                 Button("Save diagnostic report",new Rectangle(26,412,262,38),ExportReport);Text("Up / Down / wheel: more settings",310,425,Color.LightGray,.8f);
             }
             else if(Page==OverlayPage.Games)
             {
-                Text("SELECT A GAME",28,106,Color.LightSkyBlue);
+                Text("SELECT A GAME",28,106,Accent);
                 int first = Math.Max(0,gameSelection-5);
                 for(int i=first;i<Games.Count && i<first+6;i++)
                 {
@@ -310,7 +381,7 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
                     Button(label,new Rectangle(26,138+(i-first)*46,708,38),
                         ()=>{gameSelection=index;Games[index].Launch();},index==gameSelection);
                 }
-                Text("Up / Down: choose game | Enter: launch",28,451,Color.LightGray,.85f);
+
             }
             else
             {
@@ -318,8 +389,10 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
                 var lines=OverlayDiagnostics.Lines(startupLog);int end=startupLog?Math.Min(lines.Length,logScroll+12):Math.Max(0,lines.Length-logScroll);int start=startupLog?logScroll:Math.Max(0,end-12);
                 for(int i=start;i<end;i++)TextFit(lines[i],28,148+(i-start)*24,Color.LightGray,.8f);
                 if(lines.Length==0)Text("No captured output yet. Managed console output is captured automatically.",28,156,Color.LightGray,.8f);
-                Text("Wheel / Page Up / Page Down to scroll. Native output needs launch capture.",28,451,Color.LightSkyBlue,.8f);
+
             }
+            if(controllerConnected)ControllerHints();
+            else Text("Tab: pages | Enter: select | F2: HUD | F1 / Escape: resume",28,450,Color.LightGray,.8f);
             TextFit(message,28,478,Color.LightGray,.8f);batch.End();
         }
         finally{GraphicsDevice.BlendState=blend;GraphicsDevice.DepthStencilState=depth;GraphicsDevice.RasterizerState=raster;GraphicsDevice.SamplerStates[0]=sampler;}
@@ -334,6 +407,8 @@ public sealed class GameCanvas : IDisposable
     static int active;
     bool disposed;
     public static int ActiveCount=>System.Threading.Volatile.Read(ref active);
+    internal static Texture2D? LastFrame { get; private set; }
+    internal static Rectangle LastDestination { get; private set; }
     public static CanvasFilterMode Filter { get; set; }
     public static string Status { get; private set; } = "not integrated";
     readonly GraphicsDevice device;
@@ -360,6 +435,7 @@ public sealed class GameCanvas : IDisposable
         var destination=new Rectangle((previousViewport.Width-width)/2,(previousViewport.Height-height)/2,width,height);
         batch.Begin(SpriteSortMode.Deferred,BlendState.Opaque,linear?SamplerState.LinearClamp:SamplerState.PointClamp,DepthStencilState.None,RasterizerState.CullNone);
         batch.Draw(target,destination,Color.White);batch.End();
+        LastFrame=target;LastDestination=destination;
         if(Filter==CanvasFilterMode.Scanlines)
         {
             batch.Begin(SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.PointClamp,DepthStencilState.None,RasterizerState.CullNone);
@@ -372,5 +448,5 @@ public sealed class GameCanvas : IDisposable
     {
         previousTargets=device.GetRenderTargets();previousViewport=device.Viewport;Present(smooth);
     }
-    public void Dispose(){if(disposed)return;disposed=true;System.Threading.Interlocked.Decrement(ref active);target.Dispose();batch.Dispose();pixel.Dispose();}
+    public void Dispose(){if(disposed)return;disposed=true;if(ReferenceEquals(LastFrame,target))LastFrame=null;System.Threading.Interlocked.Decrement(ref active);target.Dispose();batch.Dispose();pixel.Dispose();}
 }

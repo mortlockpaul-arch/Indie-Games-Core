@@ -32,6 +32,16 @@ internal static class Program
                 help.Close();owner.Close();app.Shutdown();
                 Console.WriteLine("PASS embedded shared help, XNA tab selection and SunBurn documentation rendering");return 0;
             }
+            var closeOwner=new Window(); closeOwner.Show();
+            bool busyClosing=true, cancelledByClose=false;
+            var closeCheck=new ProjectShareWindow(closeOwner,new StackPanel(),()=>busyClosing,()=>cancelledByClose=true,_=>{});
+            closeCheck.Show(); closeCheck.SetBusy(true); closeCheck.Close();
+            if(!closeCheck.IsVisible || cancelledByClose)throw new Exception("Closing a busy submission must not cancel it implicitly");
+            var closeControl=(Button)typeof(ProjectShareWindow).GetField("_close",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(closeCheck)!;
+            if(closeControl.IsEnabled || closeControl.Content.ToString()!="Close window")throw new Exception("Busy close action unclear");
+            busyClosing=false;closeCheck.SetBusy(false);closeCheck.Close();closeOwner.Close();
+            if(closeCheck.IsVisible)throw new Exception("Idle submission window must close");
+            Console.WriteLine("PASS explicit Close window and no implicit submission cancellation");
             string source=Path.Combine(root,"Example"), game=Path.Combine(root,"Built Example");
             Directory.CreateDirectory(source); Directory.CreateDirectory(game);
             File.WriteAllText(Path.Combine(source,"Example.csproj"),"<Project><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>");

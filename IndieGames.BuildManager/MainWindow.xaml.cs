@@ -132,15 +132,6 @@ public static void ScanXnaReferences(string folder)
     private void CancelScan_Click(object sender, RoutedEventArgs e) => _scanCts?.Cancel();
     private void Scan_Click(object sender, RoutedEventArgs e) => Scan();
 
-    private void Quit_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button button && button.ContextMenu is { } menu)
-        {
-            menu.PlacementTarget = button;
-            menu.IsOpen = true;
-        }
-    }
-
     private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
 
     private async void FullShutdown_Click(object sender, RoutedEventArgs e)

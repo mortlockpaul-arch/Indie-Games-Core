@@ -520,6 +520,7 @@ public partial class TorrentWindow : Window
                 if(!game) ProjectInstalled?.Invoke(root);
             }
         });
+    private void CloseCatalogue_Click(object sender, RoutedEventArgs e) => Close();
     private void Cancel_Click(object sender, RoutedEventArgs e) => _operation?.Cancel();
 
     private void Window_Closing(object? sender, CancelEventArgs e)

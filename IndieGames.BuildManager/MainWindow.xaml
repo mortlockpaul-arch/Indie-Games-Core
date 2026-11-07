@@ -27,14 +27,8 @@
        <Button Style="{StaticResource ToolbarButton}" Content="Games / Ports…" Click="PlayableGames_Click"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Catalogue…" Click="TorrentCatalogue_Click"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Merge Catalogue PRs…" Click="MergeCatalogue_Click" ToolTip="Preview and safely merge validated catalogue pull requests as repository administrator"/>
-       <Button Style="{StaticResource ToolbarButton}" Content="Quit…" Click="Quit_Click">
-        <Button.ContextMenu>
-         <ContextMenu Placement="Bottom">
-          <MenuItem Header="Close Window" Click="CloseWindow_Click" ToolTip="Background seeding continues if enabled"/>
-          <MenuItem Header="Full Shutdown" Click="FullShutdown_Click" ToolTip="Stop seeding and exit Build Manager"/>
-         </ContextMenu>
-        </Button.ContextMenu>
-       </Button>
+       <Button Style="{StaticResource ToolbarButton}" Content="Close window" Click="CloseWindow_Click" ToolTip="Close the main window; background seeding continues when enabled"/>
+       <Button Style="{StaticResource ToolbarButton}" Content="Exit Build Manager" Click="FullShutdown_Click" ToolTip="Quit Build Manager and stop all transfers"/>
      </WrapPanel>
    </StackPanel>
    <Grid>

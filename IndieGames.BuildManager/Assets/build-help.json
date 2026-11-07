@@ -177,7 +177,7 @@
       "sections": [
         {
           "title": "Install From Build Manager",
-          "body": "Select one or more game rows, open Repairs and click Add F1 settings overlay. The installer checks supported .NET 9+ Windows FNA/MonoGame source hosts, backs up source/project files to .backups/f1-overlay-*.zip, adds the matching overlay project and wires the game loop. Rebuild, run the game and press F1. Repeating the action leaves existing hooks alone and can restore a missing project reference. Custom/inherited hosts, ambiguous layouts and complex draw control flow are reported for manual integration. Manic Miner 360 and Jet Set Willy 360 receive their known fixed-resolution canvas adapter."
+          "body": "Select one or more game rows, open Repairs and click Add F1 settings overlay. The installer checks supported .NET 9+ Windows FNA/MonoGame source hosts, backs up source/project files to .backups/f1-overlay-*.zip, adds the matching overlay project and wires the game loop. Rebuild, run the game and press F1. Repeating the action preserves existing hooks, restores missing project references, and adds a canvas to an existing menu when the layout is supported. Custom/inherited hosts, ambiguous layouts and complex draw control flow are reported for manual integration. Simple SpriteBatch games with one fixed full-frame drawing size receive an automatic canvas for resolution scaling and CRT filters. Manic Miner 360 and Jet Set Willy 360 retain their known adapters."
         },
         {
           "title": "F1 Settings for Ordinary Games",
