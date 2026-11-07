@@ -16,7 +16,16 @@ public sealed class GameProject : INotifyPropertyChanged
     public string BuildArchitecture { get => _buildArchitecture; set { _buildArchitecture = value; PropertyChanged?.Invoke(this, new(nameof(BuildArchitecture))); } }
     private bool _isInSolution;
     public bool IsInSolution { get => _isInSolution; set { if (_isInSolution == value) return; _isInSolution=value; PropertyChanged?.Invoke(this,new(nameof(IsInSolution))); } }
-    private string _status = "Not built";
-    public string Status { get => _status; set { _status = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); } }
+    private string _status = "No build or run recorded";
+    public DateTimeOffset? StatusUpdatedAt { get; private set; }
+    public string StatusDisplay => StatusUpdatedAt is { } updated ? $"{Status} · {updated.ToLocalTime():g}" : Status;
+    public string Status { get => _status; set => SetStatus(value, DateTimeOffset.UtcNow); }
+    public void SetStatus(string status, DateTimeOffset? updated)
+    {
+        _status = status;
+        StatusUpdatedAt = updated;
+        PropertyChanged?.Invoke(this, new(nameof(StatusDisplay)));
+        PropertyChanged?.Invoke(this, new(nameof(Status)));
+    }
     public event PropertyChangedEventHandler? PropertyChanged;
 }

@@ -87,7 +87,9 @@
          <DataGridTextColumn Header="Project arch" Binding="{Binding PlatformTarget}" Width="100"/>
          <DataGridTextColumn Header="Next build" Binding="{Binding BuildArchitecture}" Width="100"/>
          <DataGridTextColumn Header="Runtime" Binding="{Binding RuntimeIdentifier}" Width="*"/>
-         <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+         <DataGridTextColumn Header="Status" Binding="{Binding StatusDisplay}" Width="*" MinWidth="280">
+          <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="ToolTip" Value="{Binding StatusDisplay}"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style></DataGridTextColumn.ElementStyle>
+         </DataGridTextColumn>
         </DataGrid.Columns>
        </DataGrid>
      </DockPanel>
