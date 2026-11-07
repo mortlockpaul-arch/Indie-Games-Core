@@ -8,6 +8,7 @@ public sealed record ShareFile(string RelativePath, long Bytes);
 public sealed record SharePlan(string Folder, string Name, IReadOnlyList<ShareFile> Files)
 {
     public string PackageKind { get; init; } = "Source";
+    public string PackageVersion { get; init; } = "";
     public long TotalBytes => Files.Sum(f => f.Bytes);
 }
 
@@ -52,7 +53,41 @@ public static class ProjectBundle
         if (packageKind == "Game" && PortableGames.ReadManifest(root) is { EntryPoint.Length: > 0 }) _ = PortableGames.ResolveExecutable(root);
         string projectName = Path.GetFileName(root); ValidateSegment(projectName);
         if (files.Count > 100000 || files.Sum(f => f.Bytes) > 100L * 1024 * 1024 * 1024) throw new InvalidDataException("Project snapshot exceeds the supported size.");
-        return new(root, projectName, files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase).ToArray()) { PackageKind = packageKind };
+        return new(root, projectName, files.OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase).ToArray()) {
+            PackageKind = packageKind, PackageVersion = ReadPackageVersion(root, packageKind, files)
+        };
+    }
+
+    private static string ReadPackageVersion(string root, string kind, IReadOnlyList<ShareFile> files)
+    {
+        if (kind == "Game") return PortableGames.Inspect(root).ExecutableVersion ?? "";
+        var versions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files.Where(f => f.RelativePath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)))
+        {
+            var xml = System.Xml.Linq.XDocument.Load(Path.Combine(root, file.RelativePath));
+            string? Read(string name) => xml.Root?.Elements().Where(e => e.Name.LocalName == "PropertyGroup" && e.Attribute("Condition") is null)
+                .SelectMany(e => e.Elements()).LastOrDefault(e => e.Name.LocalName == name && e.Attribute("Condition") is null)?.Value.Trim();
+            string? version = Read("FileVersion") ?? Read("Version") ?? Read("VersionPrefix");
+            if (string.Equals(Read("GenerateAssemblyInfo"), "false", StringComparison.OrdinalIgnoreCase) || xml.Root?.Attribute("Sdk") is null)
+            {
+                var assemblyInfo = files.Where(f => Path.GetFileName(f.RelativePath).Equals("AssemblyInfo.cs", StringComparison.OrdinalIgnoreCase) &&
+                    Path.GetDirectoryName(Path.GetFullPath(Path.Combine(root, f.RelativePath)))!.StartsWith(
+                        Path.GetDirectoryName(Path.GetFullPath(Path.Combine(root, file.RelativePath)))! + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+                foreach (var info in assemblyInfo)
+                {
+                    var text = File.ReadAllText(Path.Combine(root, info.RelativePath));
+                    foreach (string attribute in new[] { "AssemblyFileVersion", "AssemblyVersion" })
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(text, @"\[assembly:\s*(?:System\.Reflection\.)?" + attribute + @"(?:Attribute)?\s*\(\s*""([^""]+)""");
+                        if (match.Success) { version = match.Groups[1].Value; break; }
+                    }
+                    if (version is not null) break;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(version) && version.Length <= 128 && !version.Any(char.IsControl) && !version.Contains("$(")) versions.Add(version);
+        }
+        // A multi-project bundle with conflicting versions has no single release number.
+        return versions.Count == 1 ? versions.Single() : "";
     }
 
     private static bool IsGameEntry(string path, IEnumerable<string> files) => PortableGames.IsEntry(path, files);

@@ -7,7 +7,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 string root=(args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(Path.GetTempPath(),"IndieGamesTorrentTest-"+Guid.NewGuid().ToString("N")));Directory.CreateDirectory(root);
 string project=Path.Combine(root,"Demo Indie Project");Directory.CreateDirectory(Path.Combine(project,"Content"));
-File.WriteAllText(Path.Combine(project,"Demo.csproj"),"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+File.WriteAllText(Path.Combine(project,"Demo.csproj"),"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Version>1.0.0</Version></PropertyGroup></Project>");
 File.WriteAllText(Path.Combine(project,"Program.cs"),"// synthetic test source");
 byte[] content=new byte[2*1024*1024];RandomNumberGenerator.Fill(content);File.WriteAllBytes(Path.Combine(project,"Content","test.bin"),content);
 foreach(string folder in new[]{"bin","obj","logs","texture-conversion","shader-repair-backups","font-repair-backups","video-conversion","584E07D1"}){Directory.CreateDirectory(Path.Combine(project,folder));File.WriteAllText(Path.Combine(project,folder,"excluded.txt"),"excluded");}
@@ -19,6 +19,7 @@ int seedPort=Port();await using var seed=new ProjectTorrentService(Path.Combine(
 using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(55));var token=timeout.Token;
 string icon="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD34AAAAASUVORK5CYII=";
 var entry=await seed.CreateShareAsync(plan,Array.Empty<string>(),token,icon);
+if(plan.PackageVersion!="1.0.0" || entry.PackageVersion!="1.0.0")throw new Exception("Source release version missing");
 File.SetLastWriteTimeUtc(Path.Combine(project,"Program.cs"),DateTime.UtcNow.AddMinutes(1));
 var reused=await seed.CreateShareAsync(plan,[],token);
 if(reused.Id!=entry.Id || reused.InfoHash!=entry.InfoHash || Directory.GetDirectories(Path.Combine(seed.StateDirectory,"shares")).Length!=1)throw new Exception("Unchanged source must reuse its snapshot without orphan packages.");
@@ -27,7 +28,17 @@ var legacyReuse=await seed.CreateShareAsync(plan,[],token);
 if(legacyReuse.Id!=entry.Id || legacyReuse.ContentSha256.Length!=64)throw new Exception("Legacy snapshots must be compared by unpacked content.");
 var inspected=await seed.InspectContentsAsync(entry,token);
 if(inspected.Files.Count!=3 || inspected.Fingerprint!=reused.ContentSha256)throw new Exception("Snapshot inspection mismatch.");
-Console.WriteLine("PASS unchanged and legacy snapshot reuse, metadata-independent content hashes, inspection and cleanup");
+string versionProject=Directory.GetFiles(project,"*.csproj").Single();
+string originalProject=File.ReadAllText(versionProject);
+File.WriteAllText(versionProject,originalProject.Replace("1.0.0","1.0.1"));
+var updated=await seed.CreateShareAsync(ProjectBundle.Preview(project),[],token);
+if(updated.InfoHash==entry.InfoHash || updated.PackageVersion!="1.0.1")throw new Exception("Updated release must create a new versioned snapshot");
+var releases=await TorrentCatalogue.LoadAsync(seed.LocalCataloguePath,token);
+if(releases.Projects.Single(p=>p.InfoHash==entry.InfoHash).PackageVersion!="1.0.0")throw new Exception("Earlier release metadata changed");
+File.WriteAllText(versionProject,originalProject);
+// Restore the catalogue used by the remaining transfer checks.
+await new TorrentCatalogue{Projects=[entry]}.SaveAsync(seed.LocalCataloguePath,token);
+Console.WriteLine("PASS versioned updates preserve earlier releases; unchanged and legacy snapshot reuse");
 string cataloguePath=Path.Combine(root,"catalogue.json");await new TorrentCatalogue{Projects=[entry]}.SaveAsync(cataloguePath,token);
 var catalogue=await TorrentCatalogue.LoadAsync(cataloguePath,token);if(catalogue.Projects.Count!=1 || catalogue.Projects[0].IconBase64!=icon)throw new Exception("Catalogue artwork round trip failed");
 foreach(string badIcon in new[]{"not base64",Convert.ToBase64String(new byte[70]),new string('A',65540)}) {

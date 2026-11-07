@@ -7,6 +7,8 @@ namespace IndieGames.BuildManager.Services;
 public sealed record TorrentProject
 {
     public string PackageKind { get; init; } = "Source";
+    public string PackageVersion { get; init; } = "";
+    public string VersionDisplay => string.IsNullOrWhiteSpace(PackageVersion) ? "Not recorded" : PackageVersion;
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public string FolderName { get; init; } = "";
@@ -90,6 +92,8 @@ public sealed class TorrentCatalogue
 
     public static async Task<Torrent> ValidateAsync(TorrentProject project)
     {
+        if (project.PackageVersion is null || project.PackageVersion.Length > 128 || project.PackageVersion.Any(char.IsControl))
+            throw new InvalidDataException("Invalid package version.");
         if (project == null || project.PackageKind is not ("Source" or "Game") || !Guid.TryParseExact(project.Id, "N", out _) || string.IsNullOrWhiteSpace(project.Name) || project.Name.Length > 200)
             throw new InvalidDataException("Invalid project identity.");
         ValidateIcon(project.IconBase64);

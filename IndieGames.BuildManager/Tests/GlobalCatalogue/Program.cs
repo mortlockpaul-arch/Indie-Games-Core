@@ -11,7 +11,7 @@ using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(2)); var tok
 string id=Guid.NewGuid().ToString("N"), package=Path.Combine(root,id+".zip"); await File.WriteAllTextAsync(package,"synthetic test package",token);
 string torrentFile=Path.Combine(root,"test.torrent"); await new TorrentCreator(TorrentType.V1Only).CreateAsync(new TorrentFileSource(package),torrentFile,token);
 byte[] metadata=await File.ReadAllBytesAsync(torrentFile,token); var torrent=await Torrent.LoadAsync(metadata);
-var project=new TorrentProject { Id=id,Name="Synthetic approval test",FolderName="Example",PackageName=id+".zip",PackageBytes=new FileInfo(package).Length,
+var project=new TorrentProject { PackageVersion="1.0.1",Id=id,Name="Synthetic approval test",FolderName="Example",PackageName=id+".zip",PackageBytes=new FileInfo(package).Length,
     UnpackedBytes=4,FileCount=1,Sha256=Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(package,token))),
     InfoHash=torrent.InfoHashes.V1!.ToHex(),TorrentBase64=Convert.ToBase64String(metadata),CreatedUtc=DateTimeOffset.UtcNow };
 var accepted=new TorrentCatalogue { Projects=[project] };
@@ -44,6 +44,7 @@ var tree=api.Calls.Single(c=>c.Path.EndsWith("/git/trees")).Body!.Value;
 var file=tree.GetProperty("tree")[0];
 if(file.GetProperty("path").GetString()!="entries/"+project.InfoHash.ToLowerInvariant()+".json")throw new Exception("Wrong submission path");
 var uploaded=await TorrentCatalogue.ParseAsync(Encoding.UTF8.GetBytes(file.GetProperty("content").GetString()!),token);
+if(uploaded.Projects.Single().PackageVersion!="1.0.1" || !api.Calls.Single(c=>c.Path.EndsWith("/pulls") && c.Method==HttpMethod.Post).Body!.Value.GetProperty("body").GetString()!.Contains("Version 1.0.1"))throw new Exception("Submission version lost");
 if(uploaded.Projects.Single().InfoHash!=project.InfoHash)throw new Exception("Submission corrupted metadata");
 int mutations=api.Calls.Count(c=>c.Method!=HttpMethod.Get);
 if((await publisher.SubmitAsync([project],token)).Url!=submission.Url || api.Calls.Count(c=>c.Method!=HttpMethod.Get)!=mutations)throw new Exception("Retry created duplicate request");

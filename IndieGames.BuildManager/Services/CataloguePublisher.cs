@@ -147,7 +147,7 @@ public sealed class CataloguePublisher(IGitHubApi api, Func<CancellationToken, T
         }, token);
         if (exists) await api.SendAsync(HttpMethod.Patch, target + "/git/refs/heads/" + branch, new { sha = Required(commit, "sha"), force = false }, token);
         else await api.SendAsync(HttpMethod.Post, target + "/git/refs", new { @ref = "refs/heads/" + branch, sha = Required(commit, "sha") }, token);
-        string summary = string.Join("\n", unique.Select(p => "- " + p.Name.Replace('\r',' ').Replace('\n',' ') + " (" + p.PackageKind + ") · " + p.SizeDisplay + " · `" + p.InfoHash + "`"));
+        string summary = string.Join("\n", unique.Select(p => "- " + p.Name.Replace('\r',' ').Replace('\n',' ') + " (" + p.PackageKind + ") · " + "Version " + p.VersionDisplay + " � " + p.SizeDisplay + " · `" + p.InfoHash + "`"));
         var result = await api.SendAsync(HttpMethod.Post, source + "/pulls", new {
             title = "Catalogue submission: " + unique[0].Name.Replace('\r', ' ').Replace('\n', ' '), head, @base = "main",
             body = "Submitted from Build Manager. These packages remain unpublished until the catalogue owner reviews and merges this request.\n\n" + summary +

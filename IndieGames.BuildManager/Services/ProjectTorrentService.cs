@@ -76,6 +76,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
             }
             catch (Exception error) when (error is IOException or InvalidDataException) { continue; }
             if (!existingContent.Equals(content.Fingerprint, StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.IsNullOrWhiteSpace(candidate.PackageVersion)) candidate = candidate with { PackageVersion = plan.PackageVersion };
             if (!string.IsNullOrEmpty(iconBase64)) candidate = candidate with { IconBase64 = iconBase64 };
             catalogue.Projects[i] = candidate;
             await catalogue.SaveAsync(LocalCataloguePath, token);
@@ -92,7 +93,7 @@ public sealed class ProjectTorrentService : IAsyncDisposable
         byte[] metadata = await File.ReadAllBytesAsync(torrentPath, token);
         var torrent = await Torrent.LoadAsync(metadata);
         await using var input = File.OpenRead(package);
-        var project = new TorrentProject { PackageKind = plan.PackageKind, Id = id, Name = plan.Name, FolderName = folderName, PackageName = id + ".zip",
+        var project = new TorrentProject { PackageKind = plan.PackageKind, PackageVersion = plan.PackageVersion, Id = id, Name = plan.Name, FolderName = folderName, PackageName = id + ".zip",
             PackageBytes = input.Length, UnpackedBytes = plan.TotalBytes, FileCount = plan.Files.Count,
             Sha256 = Convert.ToHexString(await SHA256.HashDataAsync(input, token)), ContentSha256 = content.Fingerprint, InfoHash = torrent.InfoHashes.V1!.ToHex(),
             TorrentBase64 = Convert.ToBase64String(metadata), IconBase64 = iconBase64, CreatedUtc = DateTimeOffset.UtcNow };

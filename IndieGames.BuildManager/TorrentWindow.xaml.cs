@@ -198,7 +198,7 @@ public partial class TorrentWindow : Window
             text = installed ? row.Project.PackageKind == "Game" ? "Installed game: choose Run installed game to play." : "Source is available in the source archive. Open the main window to build it." :
                 transfer?.Manager.Complete == true ? "Download complete. Choose Verify and install; playable games can then be launched with Run installed game." :
                 "Choose Start selected, wait for 100%, then Verify and install. Source files require building before they can run.";
-            text = $"{row.KindLabel} · Created {row.Project.CreatedUtc.ToLocalTime():dd MMM yyyy HH:mm:ss} · Snapshot {row.Project.SnapshotDisplay} · {row.Project.FileCount:N0} files\n" + text;
+            text = $"{row.KindLabel} · Version {row.Project.VersionDisplay} · Created {row.Project.CreatedUtc.ToLocalTime():dd MMM yyyy HH:mm:ss} · Snapshot {row.Project.SnapshotDisplay} · {row.Project.FileCount:N0} files\n" + text;
             if (_rows.Count(r => r.Project.Name.Equals(row.Project.Name, StringComparison.OrdinalIgnoreCase) && r.Project.PackageKind == row.Project.PackageKind) > 1)
                 text += "\nMore than one snapshot exists for this package type. Select two and choose Compare Snapshots to see file differences.";
         }
@@ -402,7 +402,9 @@ public partial class TorrentWindow : Window
             if(revision != _previewRevision || kind != ShareKind || sourceFolder != CurrentSource) return;
             _preview = plans;
             _previewIcon = CatalogueArtwork.Encode(sourceFolder);
-            ShareFilesBox.Text = string.Join(Environment.NewLine, plans.SelectMany(plan => plan.Files.Select(f => plan.PackageKind + ": " + f.RelativePath)));
+            ShareFilesBox.Text = string.Join(Environment.NewLine, plans.SelectMany(plan =>
+                new[] { $"{plan.PackageKind} version: {(string.IsNullOrWhiteSpace(plan.PackageVersion) ? "Not recorded" : plan.PackageVersion)}" }
+                .Concat(plan.Files.Select(f => plan.PackageKind + ": " + f.RelativePath))));
             ShareSummary.Text = $"{plans.Count} package(s), {plans.Sum(p=>p.Files.Count):N0} files, {plans.Sum(p=>p.TotalBytes)/1048576.0:N1} MB";
             CreateShareButton.IsEnabled = true;
             Log("File preview ready. Creating a share makes an immutable snapshot and starts uploading it to peers.");

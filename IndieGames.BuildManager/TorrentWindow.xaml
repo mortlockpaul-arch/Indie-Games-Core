@@ -46,6 +46,7 @@
      </DataTemplate></DataGridTemplateColumn.CellTemplate>
     </DataGridTemplateColumn>
     <DataGridTextColumn Header="Package type" Binding="{Binding KindLabel}" Width="115"/>
+    <DataGridTextColumn Header="Version" Binding="{Binding Project.VersionDisplay}" Width="110"/>
     <DataGridTextColumn Header="Publication" Binding="{Binding Publication}" Width="155"/>
     <DataGridTextColumn Header="Created" Binding="{Binding Project.CreatedDisplay}" SortMemberPath="Project.CreatedUtc" Width="115"/>
     <DataGridTextColumn Header="Snapshot" Binding="{Binding Project.SnapshotDisplay}" Width="100"/>
