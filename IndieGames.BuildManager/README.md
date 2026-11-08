@@ -152,3 +152,5 @@ Compact Repair Center options with help popups; global Weird Mode in Settings; l
 ## 1.1.16
 
 Opening the submission editor lists game folders without recursively inspecting every installed game. Folder discovery supports cancellation. Missing-build errors identify the expected folder and suggest Refresh Files after building. The progress indicator is hidden when no operation is running.
+
+Closing the submission window or hiding the catalogue restores and activates the main Build Manager window after modal processing finishes; transfers keep running.

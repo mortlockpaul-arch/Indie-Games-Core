@@ -352,7 +352,7 @@ public partial class TorrentWindow : Window
             SchedulePreview();
         };
         try { window.ShowDialog(); }
-        finally { _previewTimer.Stop(); _previewPending=false; window.DetachForm(); ShareHost.Content=form; _shareWindow=null; }
+        finally { _previewTimer.Stop(); _previewPending=false; window.DetachForm(); ShareHost.Content=form; _shareWindow=null; RefocusMainWindow(); }
     }
     private void CancelShareOperation()
     {
@@ -546,9 +546,21 @@ public partial class TorrentWindow : Window
         if (_closed) return;
         e.Cancel = true;
         Hide();
+        RefocusMainWindow();
         Log("Torrent Manager hidden. Transfers continue; use Stop Torrents in the main window to stop them.");
     }
 
+    private void RefocusMainWindow()
+    {
+        if (Owner is not MainWindow main || _closing) return;
+        // Wait until modal/close processing has finished so WPF cannot undo activation.
+        Dispatcher.BeginInvoke(new Action(() => {
+            if (_closing || main.Dispatcher.HasShutdownStarted || !main.IsLoaded) return;
+            main.Show();
+            if (main.WindowState == WindowState.Minimized) main.WindowState = WindowState.Normal;
+            main.Activate();
+        }), DispatcherPriority.Background);
+    }
     public async Task ShutdownAsync()
     {
         if (_closed) return;

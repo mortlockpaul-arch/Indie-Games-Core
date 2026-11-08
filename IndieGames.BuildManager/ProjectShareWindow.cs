@@ -10,7 +10,7 @@ public sealed class ProjectShareWindow : Window
     private readonly ScrollViewer _form;
     private readonly TextBox _status = new() { IsReadOnly=true, AcceptsReturn=true, Height=100, TextWrapping=TextWrapping.Wrap, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
     private readonly Button _submission = new() { Content="View submission", IsEnabled=false };
-    private readonly Button _close = new() { Content="Close window", ToolTip="Close this submission window. Completed submissions and seeding are kept." };
+    private readonly Button _close = new() { Content="Close window", ToolTip="Return to the main Build Manager window. Completed submissions and seeding are kept." };
     private readonly Button _cancel = new() { Content="Cancel operation", IsEnabled=false };
     private readonly TextBlock _nextSteps = new() { Text="Review the files, then publish for approval. Approved packages appear in everyone's global catalogue.", TextWrapping=TextWrapping.Wrap, Foreground=Brushes.LightSteelBlue, Margin=new Thickness(4,8,4,4) };
     private string? _submissionUrl;
@@ -29,7 +29,7 @@ public sealed class ProjectShareWindow : Window
         var panel=new DockPanel { Margin=new Thickness(16) }; Content=panel;
         var heading=new StackPanel(); DockPanel.SetDock(heading,Dock.Top); panel.Children.Add(heading);
         heading.Children.Add(new TextBlock { Text="Submit a Game to the Catalogue", FontSize=22, FontWeight=FontWeights.SemiBold });
-        heading.Children.Add(new TextBlock { Text="Choose a game, review the package, and submit it for approval. Close window returns to the catalogue; it does not quit Build Manager or withdraw a completed submission.", TextWrapping=TextWrapping.Wrap, Foreground=Brushes.LightGray, Margin=new Thickness(0,6,0,12) });
+        heading.Children.Add(new TextBlock { Text="Choose a game, review the package, and submit it for approval. Close window returns to the main Build Manager window; it does not quit Build Manager or withdraw a completed submission.", TextWrapping=TextWrapping.Wrap, Foreground=Brushes.LightGray, Margin=new Thickness(0,6,0,12) });
         _footer=new StackPanel(); DockPanel.SetDock(_footer,Dock.Bottom); panel.Children.Add(_footer);
         _footer.Children.Add(_progress);
         _footer.Children.Add(_nextSteps);
