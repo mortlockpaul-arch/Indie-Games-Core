@@ -76,6 +76,8 @@ try
     ProjectArchitectureUpdater.Apply(projectPath, "x86");
     var document = System.Xml.Linq.XDocument.Load(projectPath);
     if (document.Descendants().Count(e => (string?)e.Attribute("Label") == ProjectArchitectureUpdater.Label) != 1) throw new Exception("Repeated saves duplicate settings");
+    foreach (string name in new[] { "Platform", "PlatformTarget", "Platforms", "Prefer32Bit", "RuntimeIdentifier" })
+        if (document.Descendants(name).Count() != 1) throw new Exception("Duplicate architecture setting: " + name);
     if (File.ReadAllText(projectPath + ".before-architecture.bak") != original) throw new Exception("Repeated save overwrote original backup");
     ProjectArchitectureUpdater.Apply(projectPath, "AnyCPU");
     if (ProjectScanner.Scan(root).Single().PlatformTarget != "AnyCPU") throw new Exception("AnyCPU save failed");

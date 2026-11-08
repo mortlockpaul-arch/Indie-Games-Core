@@ -388,7 +388,7 @@ public static void ScanXnaReferences(string folder)
         try
         {
             string configuration = Value(ConfigBox);
-            string platform = Value(PlatformBox);
+            string platform = Value(TargetBox);
             string runtime = RuntimeBox.Text.Trim();
             string framework = FrameworkBox.Text.Trim();
             string projectName = Path.GetFileNameWithoutExtension(project.Path);
@@ -483,8 +483,12 @@ public static void ScanXnaReferences(string folder)
         _updatingArchitecture = true;
         try
         {
-            PlatformBox.Text = architecture;
             TargetBox.Text = architecture;
+            string runtime = RuntimeBox.Text.Trim();
+            int separator = runtime.LastIndexOf('-');
+            if (architecture != "AnyCPU" && separator > 0 &&
+                runtime[(separator + 1)..] is "x86" or "x64" or "arm64" or "arm")
+                RuntimeBox.Text = runtime[..(separator + 1)] + architecture;
             UpdateBuildArchitectureRows();
         }
         finally { _updatingArchitecture = false; }
@@ -538,7 +542,7 @@ public static void ScanXnaReferences(string folder)
         {
             Log($"Inspecting {project.Name}");
             var args = new List<string> { "msbuild", project.Path,
-                $"-p:Configuration={Value(ConfigBox)}", $"-p:Platform={Value(PlatformBox)}",
+                $"-p:Configuration={Value(ConfigBox)}", $"-p:Platform={Value(TargetBox)}",
                 "-getProperty:TargetFramework,TargetFrameworks,Configuration,Platform,PlatformTarget,Platforms,RuntimeIdentifier,RuntimeIdentifiers,OutputPath,BaseIntermediateOutputPath,ProjectAssetsFile" };
             args.AddRange(_storage.BuildArguments(project.Path).Select(EscapeMsbuildPropertyArgument));
             await ProcessRunner.RunAsync("dotnet", args,
@@ -551,7 +555,7 @@ public static void ScanXnaReferences(string folder)
         if (selected.Count == 0) { Log("Select one or more projects first."); return; }
         string exe = UseVsBox.IsChecked == true ? MsbuildPathBox.Text.Trim() : "dotnet";
         if (UseVsBox.IsChecked == true && !File.Exists(exe)) { Log("Set a valid MSBuild.exe path."); return; }
-        string config = Value(ConfigBox), platform = Value(PlatformBox), target = Value(TargetBox);
+        string config = Value(ConfigBox), platform = Value(TargetBox), target = Value(TargetBox);
         string framework = FrameworkBox.Text.Trim(), runtime = RuntimeBox.Text.Trim();
         await ExecuteAsync(async token =>
         {
@@ -663,7 +667,7 @@ public static void ScanXnaReferences(string folder)
                 else if (action == "rebuild") args.Add("-t:Rebuild");
                 else if (action == "clean") args.Add("-t:Clean");
                 args.Add($"-p:Configuration={Value(ConfigBox)}");
-                args.Add($"-p:Platform={Value(PlatformBox)}");
+                args.Add($"-p:Platform={Value(TargetBox)}");
                 args.Add($"-p:PlatformTarget={Value(TargetBox)}");
                 args.AddRange(profile.Arguments);
                 if (!string.IsNullOrWhiteSpace(FrameworkBox.Text)) args.Add($"-p:TargetFramework={FrameworkBox.Text.Trim()}");
@@ -753,10 +757,28 @@ public static void ScanXnaReferences(string folder)
     private void ProjectsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (GameSelectionCount == null) return;
-        UpdateBuildArchitectureRows();
-        UpdateBuildProfileOptions();
         var selected = Selected();
         var project = ProjectsGrid.SelectedItem as GameProject;
+        if (_architectureReady && selected.Count == 1 && project != null)
+        {
+            _updatingArchitecture = true;
+            try
+            {
+                // Multiple conditional choices cannot populate a single build option.
+                string architecture = project.PlatformTarget.Trim();
+                if (architecture is "x86" or "x64" or "AnyCPU")
+                {
+                    TargetBox.Text = architecture;
+                }
+                if (!project.RuntimeIdentifier.Contains(';') && !project.RuntimeIdentifier.Contains("$("))
+                    RuntimeBox.Text = project.RuntimeIdentifier;
+                if (!project.TargetFramework.Contains(';') && !project.TargetFramework.Contains("$("))
+                    FrameworkBox.Text = project.TargetFramework;
+            }
+            finally { _updatingArchitecture = false; }
+        }
+        UpdateBuildArchitectureRows();
+        UpdateBuildProfileOptions();
         GameSelectionCount.Text = selected.Count == 0 ? "Select games to build or repair" :
             $"{selected.Count} game{(selected.Count == 1 ? "" : "s")} selected";
         OpenSelectedFolderButton.IsEnabled = project != null;
@@ -1032,7 +1054,7 @@ public static void ScanXnaReferences(string folder)
         }
         string sdkFramework = string.IsNullOrWhiteSpace(FrameworkBox.Text)
             ? "net9.0-windows" : FrameworkBox.Text.Trim();
-        string sdkPlatform = Value(PlatformBox);
+        string sdkPlatform = Value(TargetBox);
         if (sdkPlatform is not ("x64" or "x86")) sdkPlatform = "x64";
         bool whatIf = preview.IsChecked == true;
         await ExecuteAsync(async token => {

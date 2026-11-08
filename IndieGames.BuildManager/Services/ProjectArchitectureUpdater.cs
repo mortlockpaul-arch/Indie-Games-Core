@@ -41,6 +41,15 @@ public static class ProjectArchitectureUpdater
         Set("Platforms", string.Join(';', platforms));
         Set("Prefer32Bit", "false");
         if (runtime.Length > 0) Set("RuntimeIdentifier", runtime);
+        // A saved choice applies across project-local configurations.
+        var names = new HashSet<string> { "Platform", "PlatformTarget", "Platforms", "Prefer32Bit", "RuntimeIdentifier" };
+        foreach (var propertyGroup in root.Elements(ns + "PropertyGroup").ToList())
+        {
+            foreach (var property in propertyGroup.Elements().Where(e => names.Contains(e.Name.LocalName)).ToList())
+                property.Remove();
+            if (!propertyGroup.HasElements && !propertyGroup.Nodes().OfType<XComment>().Any())
+                propertyGroup.Remove();
+        }
         root.Add(new XText(Environment.NewLine + "  "), group, new XText(Environment.NewLine));
         string backup = projectPath + ".before-architecture.bak";
         if (!File.Exists(backup)) File.Copy(projectPath, backup);
