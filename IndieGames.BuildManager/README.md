@@ -1,6 +1,6 @@
 # Indie Games Build Manager (WPF, .NET 10)
 
-A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.3**.
+A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.15**.
 
 The separately distributed [Python frontend](https://pmortlock.itch.io/xenia-game-manager) handles extraction and ILSpy decompilation and launches Build Manager. Both use the same recovered project folders. See the [repository overview and setup guide](../README.md) for the complete workflow.
 
@@ -121,6 +121,10 @@ Tests:
 Shader implementations are desktop reconstructions of the original contracts, not recovered Xbox HLSL. Full gameplay and other shader fingerprints are outside these component tests.
 ## Portable build and deployment
 
+The **Source and SDK Repairs** dialog includes **Ambiguous Types (XNA Color / Farseer Path)** as a separate repair from Colors. Preview builds the selected game and lists compiler-reported CS0104 occurrences without editing source. Apply qualifies only those reported names, backs up changed source under `.backups/ambiguities-*`, then rebuilds. It uses `Microsoft.Xna.Framework.Color` for game Color conflicts and distinguishes Farseer physics paths from `System.IO.Path` operations. Unsupported ambiguous types and CS0121 overload errors are reported for review. This requires Python 3.10+ and the project's .NET SDK.
+
+The standalone script is `scripts/repair_ambiguities.py --project <game.csproj>`; add `--apply` to make changes, or use `--color-type System.Drawing.Color` when the reported Color occurrences belong to Windows UI code. Preview still creates ordinary build output; it does not modify source files.
+
 From the Indie-Games-Core checkout, run this in PowerShell to check and install the required x64 .NET SDK. Approve the installer prompt if Windows asks.
 
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\IndieGames.BuildManager\scripts\Install-BuildManagerSdk.ps1"
@@ -140,3 +144,7 @@ Deploy the complete publish folder to the Python frontend's `src/assets/tools/bu
 ## One-click torrents (1.1.3)
 
 Choose **Start / resume torrents** in the main window to resume saved downloads and seed local packages. Transfers appear in the bottom Torrents tab without opening the catalogue. If no transfers are saved, the catalogue opens so you can select a package and choose **Start selected**. This same action automatically seeds complete cached packages or downloads missing pieces. Downloads are remembered for restart; verification and installation remain separate. No new catalogue projects are automatically downloaded, and publishing still requires approval. **Stop torrents** stops all transfers while retaining their cached files and saved metadata.
+
+## 1.1.15
+
+Compact Repair Center options with help popups; global Weird Mode in Settings; live game search (Ctrl+F, Enter, Escape); torrent selection follows the matching local game and survives status refreshes. Includes pending source-repair and backup-cleanup improvements.

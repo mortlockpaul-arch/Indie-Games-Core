@@ -1,7 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.VisualBasic.FileIO;
 namespace IndieGames.BuildManager.Services;
 public sealed record BackupCleanupEntry(string Root,string Path,bool Directory,long Bytes,int Files,string Fingerprint);
 public static class BackupCleanup
@@ -36,13 +35,37 @@ public static class BackupCleanup
         }
         Walk(root);return result;
     }
-    public static void Recycle(BackupCleanupEntry entry)
+    public static void Delete(BackupCleanupEntry entry, Action<long>? fileDeleted = null)
     {
         Validate(entry.Root,entry.Path);
         if(!BackupFile(System.IO.Path.GetFileName(entry.Path))&&!KnownFolders.Contains(System.IO.Path.GetFileName(entry.Path))&&!(entry.Directory&&new[]{"backup","backups"}.Contains(System.IO.Path.GetFileName(entry.Path),StringComparer.OrdinalIgnoreCase)))throw new IOException("Not a recognized backup.");
         var current=Inspect(entry.Root,entry.Path,entry.Directory,CancellationToken.None);
         if(current.Fingerprint!=entry.Fingerprint)throw new IOException("Backup changed since preview; scan again: "+entry.Path);
-        if(entry.Directory)FileSystem.DeleteDirectory(entry.Path,UIOption.OnlyErrorDialogs,RecycleOption.SendToRecycleBin,UICancelOption.ThrowException);
-        else FileSystem.DeleteFile(entry.Path,UIOption.OnlyErrorDialogs,RecycleOption.SendToRecycleBin,UICancelOption.ThrowException);
+        var files = new List<(string Path, long Bytes, DateTime Modified)>();
+        var directories = new List<string>();
+        void Collect(string path)
+        {
+            Validate(entry.Root,path);
+            if(System.IO.Directory.Exists(path)) {
+                foreach(var child in System.IO.Directory.EnumerateFileSystemEntries(path))Collect(child);
+                directories.Add(path);
+            } else {
+                var info=new FileInfo(path);files.Add((path,info.Length,info.LastWriteTimeUtc));
+            }
+        }
+        Collect(entry.Path);
+        if(Inspect(entry.Root,entry.Path,entry.Directory,CancellationToken.None).Fingerprint!=entry.Fingerprint)
+            throw new IOException("Backup changed since preview; scan again: "+entry.Path);
+        foreach(var file in files) {
+            Validate(entry.Root,file.Path);
+            var info=new FileInfo(file.Path);
+            if(info.Length!=file.Bytes || info.LastWriteTimeUtc!=file.Modified)throw new IOException("Backup changed since preview: "+file.Path);
+            File.Delete(file.Path);
+            fileDeleted?.Invoke(file.Bytes);
+        }
+        foreach(var directory in directories) {
+            Validate(entry.Root,directory);
+            System.IO.Directory.Delete(directory,recursive:false);
+        }
     }
 }

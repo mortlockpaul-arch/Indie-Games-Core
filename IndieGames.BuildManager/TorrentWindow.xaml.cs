@@ -74,6 +74,7 @@ public partial class TorrentWindow : Window
     public event Action<TorrentStatusSnapshot>? StatusChanged;
     private readonly TaskCompletionSource _shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public event Action<string>? ProjectInstalled;
+    public event Action<TorrentProject>? ProjectSelected;
 
     public TorrentWindow(string archiveRoot, string? selectedFolder = null, string? stateDirectory = null, string? gamesRoot = null, string? gameFolder = null, ProjectTorrentService? service = null, GlobalCatalogue? globalCatalogue = null)
     {
@@ -186,7 +187,12 @@ public partial class TorrentWindow : Window
     }
     private void SharingHelp_Click(object sender, RoutedEventArgs e) => SharingHelpWindow.ShowFor(_shareWindow ?? (Window)this);
     private void RefreshShare_Click(object sender, RoutedEventArgs e) => SchedulePreview();
-    private void CatalogueSelection_Changed(object sender, SelectionChangedEventArgs e) => UpdatePackageHelp();
+    private void CatalogueSelection_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        UpdatePackageHelp();
+        if (e.AddedItems.Count > 0 && CatalogueGrid.SelectedItem is Row row)
+            ProjectSelected?.Invoke(row.Project);
+    }
     private void UpdatePackageHelp()
     {
         if (PackageHelpText == null) return;

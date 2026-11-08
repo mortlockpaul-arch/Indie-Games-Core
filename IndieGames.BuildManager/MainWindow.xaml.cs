@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly LibraryStorage _storage = LibraryStorage.Load();
     private readonly ProjectStatusStore _projectStatuses;
     private bool _torrentShutdown;
+    private bool _refreshingTorrents;
     private bool _architectureReady, _updatingArchitecture;
     private readonly ConcurrentQueue<string> _pendingLog = new();
     private readonly DispatcherTimer _logTimer;
@@ -49,6 +50,17 @@ public partial class MainWindow : Window
         RootBox.Text = _storage.Archive;
         UpdateSolutionLabel();
         ProjectsGrid.ItemsSource = _projects;
+        System.Windows.Data.CollectionViewSource.GetDefaultView(_projects).Filter = item => {
+            string query = GameSearchBox.Text.Trim();
+            return item is GameProject project && (query.Length == 0 ||
+                project.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                project.Path.Contains(query, StringComparison.OrdinalIgnoreCase));
+        };
+        PreviewKeyDown += (_, e) => {
+            if (e.Key == System.Windows.Input.Key.F && System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control) {
+                GameSearchBox.Focus(); GameSearchBox.SelectAll(); e.Handled = true;
+            }
+        };
         AudioFfmpegBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
         WaveBankDecoderBox.Text = Path.Combine(AppContext.BaseDirectory, "tools", "vgmstream", "vgmstream-cli.exe");
         Loaded += (_,_) => Scan();
@@ -128,6 +140,20 @@ public static void ScanXnaReferences(string folder)
         catch (OperationCanceledException) { if (_scanCts == scan) FolderScanStatus.Text="Scan Cancelled"; }
         catch (Exception ex) { if (_scanCts == scan) { FolderScanStatus.Text="Scan Failed: "+ex.Message; Log(FolderScanStatus.Text); } }
         finally { if (_scanCts == scan) { _scanCts=null; FolderScanProgress.IsIndeterminate=false; CancelScanButton.IsEnabled=false; } }
+    }
+    private void GameSearch_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (ProjectsGrid?.ItemsSource != null)
+            System.Windows.Data.CollectionViewSource.GetDefaultView(_projects).Refresh();
+    }
+    private void ClearGameSearch_Click(object sender, RoutedEventArgs e) { GameSearchBox.Clear(); GameSearchBox.Focus(); }
+    private void GameSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Escape) { GameSearchBox.Clear(); e.Handled = true; }
+        else if (e.Key == System.Windows.Input.Key.Enter && ProjectsGrid.Items.Count > 0) {
+            ProjectsGrid.SelectedItems.Clear(); ProjectsGrid.SelectedItem = ProjectsGrid.Items[0];
+            ProjectsGrid.ScrollIntoView(ProjectsGrid.SelectedItem); ProjectsGrid.Focus(); e.Handled = true;
+        }
     }
     private void CancelScan_Click(object sender, RoutedEventArgs e) => _scanCts?.Cancel();
     private void Scan_Click(object sender, RoutedEventArgs e) => Scan();
@@ -293,6 +319,7 @@ public static void ScanXnaReferences(string folder)
         _torrentWindow = new TorrentWindow(root, folder, _storage.TorrentCache, _storage.Games, Selected().FirstOrDefault() is { } chosen ? _storage.GameFolder(chosen.Path) : null, (Application.Current as App)?.Torrents) { Owner = this };
         _torrentWindow.ProjectInstalled += archive => { RootBox.Text = archive; Scan(); };
         _torrentWindow.StatusChanged += UpdateTorrentStatus;
+        _torrentWindow.ProjectSelected += project => SelectTorrentGame(project.FolderName, project.Name);
         _torrentWindow.Closed += (_, _) => { _torrentWindow = null; StopTorrentsButton.IsEnabled=false; };
         StopTorrentsButton.IsEnabled=true;
         if(show)_torrentWindow.Show();
@@ -304,7 +331,38 @@ public static void ScanXnaReferences(string folder)
         TorrentSummary.Text=snapshot.Summary;
         TorrentActivity.Text=snapshot.Activity;
         TorrentActivity.ToolTip=snapshot.Activity;
-        TorrentTransfersGrid.ItemsSource=snapshot.Transfers;
+        string? selectedHash = (TorrentTransfersGrid.SelectedItem as TorrentStatus)?.InfoHash;
+        _refreshingTorrents = true;
+        try {
+            TorrentTransfersGrid.ItemsSource = snapshot.Transfers;
+            if (!string.IsNullOrEmpty(selectedHash))
+                TorrentTransfersGrid.SelectedItem = snapshot.Transfers.FirstOrDefault(t => t.InfoHash == selectedHash);
+        }
+        finally { _refreshingTorrents = false; }
+    }
+    private void TorrentTransfersGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_refreshingTorrents && e.AddedItems.Count > 0 && TorrentTransfersGrid.SelectedItem is TorrentStatus transfer)
+            SelectTorrentGame(transfer.FolderName, transfer.Name);
+    }
+
+    private void SelectTorrentGame(string folderName, string name)
+    {
+        // Prefer the package folder (including hashed playable-game folders) over a title match.
+        var matches = string.IsNullOrWhiteSpace(folderName) ? Array.Empty<GameProject>() : _projects.Where(p =>
+            string.Equals(Path.GetRelativePath(RootBox.Text.Trim(), p.Path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0], folderName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.GetFileName(_storage.GameFolder(p.Path)), folderName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var project = matches.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+            ?? (matches.Length == 1 ? matches[0] : null);
+        if (project == null && matches.Length == 0) {
+            var named = _projects.Where(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (named.Length == 1) project = named[0];
+        }
+        if (project == null) return;
+        if (!ProjectsGrid.Items.Contains(project)) GameSearchBox.Clear();
+        ProjectsGrid.SelectedItems.Clear();
+        ProjectsGrid.SelectedItem = project;
+        ProjectsGrid.ScrollIntoView(project);
     }
     private void ViewTorrents_Click(object sender, RoutedEventArgs e) => OutputTabs.SelectedIndex=1;
     private async void StartTorrents_Click(object sender, RoutedEventArgs e)
@@ -947,6 +1005,32 @@ public static void ScanXnaReferences(string folder)
         }
     }
 
+    private async Task<int> RunWarningFixerAsync(string project, bool preview, CancellationToken token)
+    {
+        Log("Warning Fixer: building to collect current diagnostics…");
+        var output = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var arguments = new[] { "build", project, "-c", Value(ConfigBox), "-p:Platform=" + Value(TargetBox), "-v:q", "-p:GenerateFullPaths=true" };
+        int exit = await ProcessRunner.RunAsync("dotnet", arguments, Path.GetDirectoryName(project)!, line => output.Enqueue(line), token);
+        string log = string.Join(Environment.NewLine, output);
+        var plan = SourceWarningFixer.Plan(log, Path.GetDirectoryName(project)!);
+        foreach (var file in plan.Files) Log($"{(preview ? "PREVIEW" : "FIX")}: {file.Path} · {file.Count} safe change(s)");
+        foreach (var group in plan.Review.GroupBy(line => System.Text.RegularExpressions.Regex.Match(line, @"\b(?:CS\d+|SYSLIB\d+)\b").Value))
+            Log($"Review: {group.Key} · {group.Count()} warning(s) require a source-specific decision.");
+        string reportDirectory = Path.Combine(_storage.BuildCache, "warning-reports", LibraryStorage.ProjectKey(project));
+        Directory.CreateDirectory(reportDirectory);
+        string report = Path.Combine(reportDirectory, DateTime.Now.ToString("yyyyMMdd-HHmmss-fffffff") + ".txt");
+        File.WriteAllText(report, log + Environment.NewLine + "REQUIRES REVIEW" + Environment.NewLine + string.Join(Environment.NewLine, plan.Review));
+        Log("Warning report: " + report);
+        if (!preview && plan.Files.Count > 0)
+        {
+            Log("Warning repair backups: " + SourceWarningFixer.Apply(plan, Path.GetDirectoryName(project)!));
+            exit = await ProcessRunner.RunAsync("dotnet", arguments, Path.GetDirectoryName(project)!, Log, token);
+        }
+        Log($"Warning Fixer: {plan.Files.Sum(file => file.Count)} {(preview ? "planned" : "applied")} change(s); build exit {exit}.");
+        if (exit != 0 && preview) Log("Preview completed; the game has build errors. See the report for details.");
+        return preview ? 0 : exit;
+    }
+
     private async void BatchXnaFixes_Click(object sender, RoutedEventArgs e)
     {
         string archive = Path.GetFullPath(RootBox.Text.Trim());
@@ -960,7 +1044,7 @@ public static void ScanXnaReferences(string folder)
             .Select(path => {
                 string relative = Path.GetRelativePath(archive, path);
                 string topFolder = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
-                return new { Name = topFolder, Folder = Path.Combine(archive, topFolder) };
+                return new { Name = topFolder, Folder = Path.Combine(archive, topFolder), Project = path };
             })
             .GroupBy(g => g.Folder, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
@@ -972,121 +1056,34 @@ public static void ScanXnaReferences(string folder)
         }
         string script = _storage.ScriptPath("XnaRepairFunctions.ps1");
 
-        var dialog = new Window {
-            Title = "Source and SDK Repairs", Width = 960, Height = 760,
-            MinWidth = 800, MinHeight = 560, Owner = this,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17,24,39)),
-            Foreground = Brushes.White
-        };
-        var layout = new DockPanel { Margin = new Thickness(14) };
-        dialog.Resources[typeof(Button)] = FindResource(typeof(Button));
-        dialog.Content = layout;
-        var top = new StackPanel();
-        top.Children.Add(new TextBlock { Text = "Repair Selected Games", FontSize = 17, Margin = new Thickness(0,0,0,10) });
-        top.Children.Add(new TextBlock {
-            Text = $"{games.Count} distinct game folder(s) selected. Use Ctrl or Shift in the main grid to change the selection.",
-            Margin = new Thickness(0,0,0,10), Foreground = Brushes.LightGray
-        });
-        var fixers = new[] {
-            ("Storage Selector", "Repair-XnaStorageSelector"), ("Open Storage", "Repair-XnaOpenContainer"),
-            ("Save Games", "Repair-XnaStorageSave"), ("Load Games", "Repair-XnaStorageLoad"),
-            ("File Access", "Repair-XnaFileStream"), ("Colors", "Repair-XnaColors"),
-            ("Gamer Avatars", "Repair-XnaSignedInGamerAvatar"), ("Sprite Drawing", "Repair-XnaSpriteBatch"),
-            ("Embedded Resources (Missing Strings)", "Repair-EmbeddedResources"),
-            ("XNA 3.x to FNA (Python 3.10+)", "Repair-Xna3"),
-            ("Scene Capture (CRON, Avatar Insane Race 3D, Jet Pack War)", "Repair-CronBloom")
-        };
-        top.Children.Add(new TextBlock { Text = "Source Repairs", Margin = new Thickness(0,8,0,4) });
-        var fixerPanel = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 }; top.Children.Add(fixerPanel);
-        var fixerChecks = fixers.Select(name => new CheckBox {
-            Style = (Style)FindResource("RepairCheckBox"), Content = new TextBlock { Text = name.Item1, TextWrapping = TextWrapping.Wrap }, Tag = name.Item2, IsChecked = name.Item2 == "Repair-XnaColors",
-            Margin = new Thickness(0,2,16,2), MinHeight = 32, FontSize = 14, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(6,0,0,0), Foreground = Brushes.White
-        }).ToList();
-        foreach (var check in fixerChecks) fixerPanel.Children.Add(check);
-        var sdkFixers = new[] {
-            ("Missing Framework Assets (1005)", "Repair-NetSdk1005"),
-            ("Conflicting Build Folders", "Repair-SharedProjectAssets"),
-            ("Missing Runtime Assets (1047)", "Repair-SDK1047"),
-            ("Architecture Settings (1032)", "Repair-SDK1032"),
-            ("Disable Auxiliary DLL Projects", "Rename-DllProjects"),
-            ("Restore Disabled DLL Projects", "Rename-DllProjects-Restore"),
-            ("Format Project XML (With Backups)", "Format-XbligProjects")
-        };
-        top.Children.Add(new TextBlock { Text = "SDK / Project Fixes:", Margin = new Thickness(0,8,0,4) });
-        var sdkPanel = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 }; top.Children.Add(sdkPanel);
-        var sdkChecks = sdkFixers.Select(f => new CheckBox {
-            Style = (Style)FindResource("RepairCheckBox"), Content = new TextBlock { Text = f.Item1, TextWrapping = TextWrapping.Wrap }, Tag = f.Item2, IsChecked = false,
-            Margin = new Thickness(0,2,16,2), MinHeight = 32, FontSize = 14, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(6,0,0,0), Foreground = Brushes.White
-        }).ToList();
-        foreach (var check in sdkChecks) sdkPanel.Children.Add(check);
-        var sdkRestore = new CheckBox { Content = "Restore packages (shared assets / SDK1032)",
-            IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0,3,12,3) };
-        var sdkClean = new CheckBox { Content = "Clean intermediates (shared assets / SDK1047)",
-            IsChecked = false, Foreground = Brushes.White, Margin = new Thickness(0,3,12,3) };
-        var sdkRids = new CheckBox { Content = "Set RuntimeIdentifiers on shared projects",
-            IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0,3,12,3) };
-        var sdkOptions = new StackPanel();
-        sdkOptions.Children.Add(sdkRestore); sdkOptions.Children.Add(sdkClean); sdkOptions.Children.Add(sdkRids);
-        top.Children.Add(new Expander { Header = "Advanced SDK Options", Content = sdkOptions,
-            Foreground = Brushes.White, Margin = new Thickness(0,6,0,6) });
-        var preview = new CheckBox { Content = "Preview Only (-WhatIf)", IsChecked = true,
-            Foreground = Brushes.White, Margin = new Thickness(0,6,0,8) };
-        top.Children.Add(preview);
-        var bottom = new StackPanel(); DockPanel.SetDock(bottom, Dock.Bottom); layout.Children.Add(bottom);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        bottom.Children.Add(actions);
-        var cancel = new Button { Content = "Cancel", Margin = new Thickness(5) };
-        var run = new Button { Content = "Run Selected Repairs", Margin = new Thickness(5) };
-        actions.Children.Add(cancel); actions.Children.Add(run);
-        var summary = new TextBlock {
-            Text = "Selected games: " + string.Join(", ", games.Take(8).Select(g => g.Name)) +
-                   (games.Count > 8 ? $" (+{games.Count - 8} more)" : ""),
-            TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray,
-            Margin = new Thickness(0,8,0,8)
-        };
-        DockPanel.SetDock(summary, Dock.Bottom); layout.Children.Add(summary);
-        layout.Children.Add(new ScrollViewer { Content = top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
-        cancel.Click += (_, _) => { dialog.DialogResult = false; };
-        run.Click += (_, _) => {
-            if (games.Count == 0 || !(fixerChecks.Any(c => c.IsChecked == true) || sdkChecks.Any(c => c.IsChecked == true))) {
-                MessageBox.Show(dialog, "Select at least one game and one repair."); return;
-            }
-            if (preview.IsChecked != true && MessageBox.Show(dialog,
-                $"Modify source files for {games.Count} games? Backups will be created.",
-                "Confirm source modifications", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-            dialog.DialogResult = true;
-        };
+        var dialog = new RepairCenterWindow(games.Select(g => g.Name).ToArray()) { Owner = this };
+        WindowAppearance.SizeToWorkArea(dialog);
         if (dialog.ShowDialog() != true) return;
         var selectedGames = games;
-        var selectedFixers = fixerChecks.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToArray();
+        var selectedFixers = dialog.SourceRepairs;
+        var selectedSdkFixers = dialog.SdkRepairs;
         bool repairXna3 = selectedFixers.Contains("Repair-Xna3");
         bool repairCronBloom = selectedFixers.Contains("Repair-CronBloom");
-        selectedFixers = selectedFixers.Where(fix => fix is not ("Repair-Xna3" or "Repair-CronBloom")).ToArray();
+        bool repairAmbiguities = selectedFixers.Contains("Repair-Ambiguities");
+        bool repairWarnings = selectedFixers.Contains("Repair-Warnings");
+        selectedFixers = selectedFixers.Where(fix => fix is not ("Repair-Xna3" or "Repair-CronBloom" or "Repair-Ambiguities" or "Repair-Warnings")).ToArray();
         string xna3Script = Path.Combine(AppContext.BaseDirectory, "scripts", "repair_xna3.py");
-        if (selectedFixers.Length > 0 && !File.Exists(script)) {
-            var chooser = new OpenFileDialog { Title = "Choose XnaRepairFunctions.ps1",
-                Filter = "PowerShell (*.ps1)|*.ps1" };
-            if (chooser.ShowDialog(this) != true) return;
-            script = chooser.FileName;
-        }
-        var selectedSdkFixers = sdkChecks.Where(c => c.IsChecked == true)
-            .Select(c => (string)c.Tag).ToArray();
-        bool sdkDoRestore = sdkRestore.IsChecked == true;
-        bool sdkDoClean = sdkClean.IsChecked == true;
-        bool sdkFixRids = sdkRids.IsChecked == true;
+        bool sdkDoRestore = dialog.RestorePackages;
+        bool sdkDoClean = dialog.CleanIntermediates;
+        bool sdkFixRids = dialog.SetRuntimeIdentifiers;
         string sdkScript = _storage.ScriptPath("BuildSdkRepairs.ps1");
+        if (selectedFixers.Length > 0 && !File.Exists(script)) {
+            MessageBox.Show(this, "Source repair script is missing: " + script, "Repair Center"); return;
+        }
         if (selectedSdkFixers.Length > 0 && !File.Exists(sdkScript)) {
-            var chooser = new OpenFileDialog { Title = "Choose BuildSdkRepairs.ps1",
-                Filter = "PowerShell (*.ps1)|*.ps1" };
-            if (chooser.ShowDialog(this) != true) return;
-            sdkScript = chooser.FileName;
+            MessageBox.Show(this, "SDK repair script is missing: " + sdkScript, "Repair Center"); return;
         }
         string sdkFramework = string.IsNullOrWhiteSpace(FrameworkBox.Text)
             ? "net9.0-windows" : FrameworkBox.Text.Trim();
         string sdkPlatform = Value(TargetBox);
         if (sdkPlatform is not ("x64" or "x86")) sdkPlatform = "x64";
-        bool whatIf = preview.IsChecked == true;
+        bool whatIf = dialog.PreviewOnly;
+        OutputTabs.SelectedIndex = 0;
         await ExecuteAsync(async token => {
             int succeeded = 0, failed = 0;
             foreach (var game in selectedGames) {
@@ -1138,6 +1135,8 @@ public static void ScanXnaReferences(string folder)
                 string encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(commands));
                 try {
                     int exit = 0;
+                    if (!whatIf && (selectedFixers.Length > 0 || repairXna3 || repairCronBloom || repairAmbiguities || repairWarnings))
+                        Log("Source backup: " + GameBuildProfiles.BackupConversion(game.Project));
                     if (repairXna3 || repairCronBloom) {
                         if (!File.Exists(xna3Script))
                             throw new FileNotFoundException("XNA 3.x repair script is missing.", xna3Script);
@@ -1152,6 +1151,17 @@ public static void ScanXnaReferences(string folder)
                             ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
                             game.Folder, Log, token);
                     }
+                    if (exit == 0 && repairAmbiguities) {
+                        string ambiguityScript = Path.Combine(AppContext.BaseDirectory, "scripts", "repair_ambiguities.py");
+                        if (!File.Exists(ambiguityScript)) ambiguityScript = _storage.ScriptPath("repair_ambiguities.py");
+                        if (!File.Exists(ambiguityScript)) throw new FileNotFoundException("Ambiguous type repair script is missing.", ambiguityScript);
+                        var arguments = new List<string> { "-3", "-X", "utf8", ambiguityScript, "--project", game.Project,
+                            "--platform", Value(TargetBox), "--configuration", Value(ConfigBox) };
+                        if (!whatIf) arguments.Add("--apply");
+                        exit = await ProcessRunner.RunAsync("py.exe", arguments, game.Folder, Log, token);
+                    }
+                    if (exit == 0 && repairWarnings)
+                        exit = await RunWarningFixerAsync(game.Project, whatIf, token);
                     if (exit == 0) succeeded++; else { failed++; Log($"FAILED: {game.Name} (exit {exit})"); }
                 }
                 catch (OperationCanceledException) { throw; }

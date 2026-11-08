@@ -30,6 +30,28 @@ public partial class App : Application
         EventManager.RegisterClassHandler(typeof(Window),FrameworkElement.LoadedEvent,new RoutedEventHandler((sender,_)=>{
             if(sender is Window window)WindowAppearance.Apply(window);
         }));
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Primitives.ButtonBase),
+            System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+            new RoutedEventHandler((_, _) => NavigationSounds.Shared.Play("select")), true);
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.MenuItem),
+            System.Windows.Controls.MenuItem.ClickEvent,
+            new RoutedEventHandler((_, _) => NavigationSounds.Shared.Play("select")), true);
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Primitives.Selector),
+            System.Windows.Controls.Primitives.Selector.SelectionChangedEvent,
+            new System.Windows.Controls.SelectionChangedEventHandler((sender, _) => {
+                if (sender is FrameworkElement { IsLoaded: true } control && (control.IsKeyboardFocusWithin || control.IsMouseOver))
+                    NavigationSounds.Shared.Play("navigate");
+            }), true);
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Expander),
+            System.Windows.Controls.Expander.ExpandedEvent,
+            new RoutedEventHandler((sender, _) => {
+                if (sender is FrameworkElement { IsLoaded: true }) NavigationSounds.Shared.Play("navigate");
+            }), true);
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Expander),
+            System.Windows.Controls.Expander.CollapsedEvent,
+            new RoutedEventHandler((sender, _) => {
+                if (sender is FrameworkElement { IsLoaded: true }) NavigationSounds.Shared.Play("navigate");
+            }), true);
         base.OnStartup(e);
         CreateTrayIcon();
         if(seedOnly)StartBackgroundSeeding();else ShowMainWindow();
@@ -134,6 +156,7 @@ public partial class App : Application
     }
     protected override void OnExit(ExitEventArgs e)
     {
+        NavigationSounds.DisposeShared();
         _seedCancellation?.Cancel();
         if(_torrents!=null)Task.Run(async()=>await _torrents.DisposeAsync()).GetAwaiter().GetResult();
         BackgroundSeeding=false;WriteStatus("Seeding stopped",0);_instance?.Dispose();_seedCancellation?.Dispose();base.OnExit(e);

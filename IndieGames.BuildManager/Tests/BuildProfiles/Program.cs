@@ -25,10 +25,17 @@ string legacy=Fixture("LegacyGame","<Reference Include=\"Microsoft.Xna.Framework
 try{GameBuildProfiles.Prepare(legacy,"FNA","NetStub","Project default","",core,root);throw new Exception("Legacy switch accepted");}catch(InvalidOperationException){}
 string mono=Fixture("MonoGame","<PackageReference Include=\"MonoGame.Framework.DesktopGL\" Version=\"3.8.1.303\"/>");Require(GameBuildProfiles.Inspect(mono).Overlay,"Supported MonoGame F1 disabled");
 var native=GameBuildProfiles.Prepare(mono,"Project default","Project default","Project default","",core,Path.Combine(root,"cache"));Require(native.Framework=="MonoGame"&&native.Network=="None"&&native.Targets.Length==0,"Plain MonoGame should not receive an XNA network shim");
-// Backup preview never modifies files; changed files are rejected before any Recycle Bin call.
+// Backup preview never modifies files; changed files are rejected before permanent deletion.
 string backupRoot=Path.Combine(root,"backup-tests");Directory.CreateDirectory(backupRoot);File.WriteAllText(Path.Combine(backupRoot,"Game.csproj"),"<Project/>");File.WriteAllText(Path.Combine(backupRoot,"Game.cs"),"source");string bak=Path.Combine(backupRoot,"Game.cs.before-version.bak");File.WriteAllText(bak,"backup");Directory.CreateDirectory(Path.Combine(backupRoot,".backups"));File.WriteAllText(Path.Combine(backupRoot,".backups","repair.zip"),"backup zip");
 var backups=BackupCleanup.Preview(backupRoot);Require(backups.Count==2&&File.Exists(bak),"Backup preview changed files or missed backups");File.AppendAllText(bak,"changed");
-try{BackupCleanup.Recycle(backups.Single(e=>!e.Directory));throw new Exception("Changed backup recycled");}catch(IOException){}
+try{BackupCleanup.Delete(backups.Single(e=>!e.Directory));throw new Exception("Changed backup deleted");}catch(IOException){}
 Require(File.Exists(bak)&&File.Exists(Path.Combine(backupRoot,"Game.cs")),"Cleanup touched changed backups or source");
 Console.WriteLine("PASS framework/network profiles, source preservation, XNA/F1 availability, plain MonoGame defaults, backup preview and changed-item rejection");
 Console.WriteLine("FIXTURES "+root);
+
+long deleted=0;
+var remaining=BackupCleanup.Preview(backupRoot);
+foreach(var entry in remaining)BackupCleanup.Delete(entry,bytes=>deleted+=bytes);
+Require(deleted=="backupchanged".Length+"backup zip".Length,"Wrong deleted-byte count");
+Require(!File.Exists(bak)&&!Directory.Exists(Path.Combine(backupRoot,".backups"))&&File.Exists(Path.Combine(backupRoot,"Game.cs")),"Permanent cleanup did not preserve source");
+Console.WriteLine("PASS permanent backup deletion and exact space-saved accounting");

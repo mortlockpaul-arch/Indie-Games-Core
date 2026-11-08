@@ -1,4 +1,4 @@
-﻿using IndieGames.BuildManager.Services;
+using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.IO;
 using System.Windows;
@@ -39,6 +39,16 @@ public sealed class StorageWindow : Window
             panel.Children.Add(new Border { Background = Brush("#182234"), BorderBrush = Brush("#374151"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(16), Margin = new Thickness(0,0,0,14), Child = section });
             return section;
         }
+        var experience = Section("App experience", "Preferences apply immediately across Build Manager and are remembered.");
+        var weird = new CheckBox {
+            Content = "Weird mode", IsChecked = NavigationSounds.Shared.Enabled,
+            Foreground = Foreground, Margin = new Thickness(0, 2, 0, 4),
+            ToolTip = "Quiet synthesized feedback throughout the app. Turn off to mute immediately."
+        };
+        weird.Checked += (_, _) => NavigationSounds.Shared.SetEnabled(true);
+        weird.Unchecked += (_, _) => NavigationSounds.Shared.SetEnabled(false);
+        experience.Children.Add(weird);
+        experience.Children.Add(new TextBlock { Text = "Quiet sounds for buttons, options and navigation.", FontSize = 12, Foreground = Brush("#9CA3AF"), TextWrapping = TextWrapping.Wrap });
         var solutionSection = Section("Solution", "Add and Remove project actions use this solution automatically.");
         var foldersSection = Section("Library folders", "Keep source files, playable games, build cache and torrent snapshots in separate folders.");
         string[] labels = ["Source archive", "Playable Windows games", "Disposable build cache", "Torrent snapshots / downloads", "Shared scripts (same folder as the Python app)"];

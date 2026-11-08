@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Version>1.1.14</Version>
+    <Version>1.1.15</Version>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -41,6 +41,7 @@
 	</ItemGroup>
   <ItemGroup>
     <None Include="scripts\repair_xna3.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="scripts\repair_ambiguities.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="Assets\KnownShaders\*" />
     <EmbeddedResource Include="Assets\XnaToFna.zip" LogicalName="IndieGames.BuildManager.XnaToFna.zip" />
     <EmbeddedResource Include="Assets\ShaderDemoBrowser.zip" LogicalName="IndieGames.BuildManager.ShaderDemoBrowser.zip" Condition="Exists('Assets\ShaderDemoBrowser.zip')" />

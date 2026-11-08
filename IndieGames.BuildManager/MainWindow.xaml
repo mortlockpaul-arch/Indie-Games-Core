@@ -59,6 +59,12 @@
          </Grid>
         </Border>
        </StackPanel>
+       <DockPanel DockPanel.Dock="Top" Margin="3,0,3,6">
+        <TextBlock DockPanel.Dock="Left" Text="Find a game" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <Button DockPanel.Dock="Right" Content="Clear" Click="ClearGameSearch_Click" ToolTip="Show all games" Padding="10,4" Margin="6,0,0,0"/>
+        <TextBlock DockPanel.Dock="Right" Text="{Binding Items.Count, ElementName=ProjectsGrid, StringFormat={}{0} games}" Foreground="#9CA3AF" VerticalAlignment="Center" Margin="10,0,4,0"/>
+        <TextBox x:Name="GameSearchBox" TextChanged="GameSearch_Changed" PreviewKeyDown="GameSearch_KeyDown" VerticalContentAlignment="Center" Padding="8,5" ToolTip="Type part of a game name or folder to filter. Ctrl+F focuses search; Enter selects the first result; Escape clears." AutomationProperties.Name="Find a game"/>
+       </DockPanel>
        <DataGrid x:Name="ProjectsGrid" AutoGenerateColumns="False" SelectionMode="Extended" SelectionUnit="FullRow" SelectionChanged="ProjectsGrid_SelectionChanged" IsReadOnly="True"
         RowStyle="{StaticResource ProjectRow}"
         Background="#182234" Foreground="#E5E7EB" AlternationCount="2" FontSize="13"
@@ -130,7 +136,7 @@
         <StackPanel Margin="7">
          <TextBlock Text="Select rows in the grid. Ctrl or Shift selects multiple games. Originals are backed up; rebuild after repairs." TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="#9CA3AF" FontSize="11" Margin="3,0,3,3"/>
          <WrapPanel>
-         <Button Content="Source and SDK Repairs…" Click="BatchXnaFixes_Click" HorizontalAlignment="Left" Background="#2563EB"/>
+         <Button Content="Open Repair Center…" Click="BatchXnaFixes_Click" HorizontalAlignment="Left" Background="#2563EB"/>
          <Button x:Name="InstallOverlayButton" Content="Add F1 Settings Overlay" Click="InstallOverlay_Click" HorizontalAlignment="Left" ToolTip="{Binding Text, ElementName=OverlayAvailabilityNote}"/><TextBlock x:Name="OverlayAvailabilityNote" Visibility="Collapsed" Foreground="#93C5FD" TextWrapping="Wrap" Margin="5"/>
          <Button Content="Convert Compiled XNA Game…" Click="ConvertXnaBinary_Click" ToolTip="Convert an original compiled game in a separate folder using XnaToFna."/>
          </WrapPanel>
@@ -191,7 +197,7 @@
         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
         </TabItem>
         <TabItem Header="Torrents">
-         <DataGrid x:Name="TorrentTransfersGrid" SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderBrush="#374151" BorderThickness="1" RowHeaderWidth="0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Background="#182234" Foreground="#E5E7EB" AlternationCount="2" FontSize="13" HorizontalGridLinesBrush="#2D3B50">
+         <DataGrid x:Name="TorrentTransfersGrid" ToolTip="Select a torrent to select its matching local game. Transfers continue while the catalogue is closed." SelectionChanged="TorrentTransfersGrid_SelectionChanged" SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderBrush="#374151" BorderThickness="1" RowHeaderWidth="0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Background="#182234" Foreground="#E5E7EB" AlternationCount="2" FontSize="13" HorizontalGridLinesBrush="#2D3B50">
           <DataGrid.Columns>
            <DataGridTextColumn Header="Project" Binding="{Binding Name}" Width="2*"/>
            <DataGridTextColumn Header="Package" Binding="{Binding Kind}" Width="110"/>

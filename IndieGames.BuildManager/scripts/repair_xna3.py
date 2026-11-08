@@ -1962,121 +1962,132 @@ def fix_xna_renderstate(
     return changed
 
 
+def _xna_sprite_code_mask(text):
+    """Keep source offsets while excluding comments and C# string literals."""
+    pattern = r'//[^\r\n]*|/\*[\s\S]*?\*/|@"(?:""|[^"])*"|"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27'
+    return re.sub(pattern, lambda m: re.sub(r'[^\r\n]', ' ', m.group()), text)
+
+
 def fix_xna_spritebatch_begin(root: str | Path, log_message) -> int:
-    root = Path(root)
+    """Convert legacy blend-first overloads without changing modern sort-first calls."""
     changed = 0
-
-    named_effect_pattern = re.compile(
-        r"(?P<sprite>\w+)\.Begin\s*\(\s*"
-        r"(?P<blend>SpriteBlendMode\.(?:AlphaBlend|None)|\(SpriteBlendMode\)\s*[01])\s*,\s*"
-        r"(?:SpriteSortMode\.Immediate|\(SpriteSortMode\)\s*0)\s*,\s*"
-        r"effect\s*:\s*(?P<effect>\w+)\s*\)\s*;"
-    )
-
-    legacy_effect_pattern = re.compile(
-        r"(?P<sprite>\w+)\.Begin\s*\(\s*"
-        r"(?P<blend>SpriteBlendMode\.(?:AlphaBlend|None)|\(SpriteBlendMode\)\s*[01])\s*,\s*"
-        r"(?:SpriteSortMode\.Immediate|\(SpriteSortMode\)\s*0)\s*,\s*"
-        r"(?:SaveStateMode\.(?:None|SaveState)|\(SaveStateMode\)\s*[01])\s*,\s*"
-        r"(?P<effect>\w+)\s*\)\s*;"
-    )
-
-    pattern = re.compile(
-        r"(?P<sprite>\w+)\.Begin\s*\(\s*"
-        r"(?P<blend>SpriteBlendMode\.(?:AlphaBlend|None)|\(SpriteBlendMode\)\s*[01])\s*,\s*"
-        r"(?:SpriteSortMode\.Immediate|\(SpriteSortMode\)\s*0)\s*,\s*"
-        r"(?:SaveStateMode\.(?:None|SaveState)|\(SaveStateMode\)\s*[01])\s*\)\s*;"
-    )
-
-    def get_blend_state(blend: str) -> str:
-        return "BlendState.Opaque" if (
-                blend == "SpriteBlendMode.None" or blend == "(SpriteBlendMode)0"
-        ) else "BlendState.AlphaBlend"
-
-    def effect_replacement(match: re.Match) -> str:
-        sprite = match.group("sprite")
-        effect = match.group("effect")
-        blend = get_blend_state(match.group("blend"))
-
-        return (
-            f"{sprite}.Begin("
-            "SpriteSortMode.Immediate, "
-            f"{blend}, "
-            "null, null, null, "
-            f"{effect});"
-        )
-
-    def replacement(match: re.Match) -> str:
-        sprite = match.group("sprite")
-        blend = get_blend_state(match.group("blend"))
-
-        return (
-            f"{sprite}.Begin("
-            "SpriteSortMode.Immediate, "
-            f"{blend});"
-        )
-
-    for path in root.rglob("*.cs"):
-        if any(part.lower() in {"bin", "obj"} for part in path.parts):
+    blend_names = {'None': 'Opaque', 'AlphaBlend': 'NonPremultiplied', 'Additive': 'Additive'}
+    blend_numbers = {'0': 'Opaque', '1': 'NonPremultiplied', '2': 'Additive'}
+    sort_numbers = {'0': 'Immediate', '1': 'Deferred', '2': 'Texture', '3': 'BackToFront', '4': 'FrontToBack'}
+    for path in Path(root).rglob('*.cs'):
+        if any(part.lower() in {'bin', 'obj', '.git'} for part in path.parts):
             continue
-
-        text = path.read_text(encoding="utf-8")
-
-        new_text, named_count = named_effect_pattern.subn(
-            effect_replacement, text
-        )
-        new_text, legacy_count = legacy_effect_pattern.subn(
-            effect_replacement, new_text
-        )
-        new_text, normal_count = pattern.subn(
-            replacement, new_text
-        )
-
-        total = named_count + legacy_count + normal_count
-
-        if total:
-            path.write_text(new_text, encoding="utf-8")
-            changed += total
-            log_message(f"Fixed: {path} ({total} occurrence(s))")
-
-    log_message(f"Fixed {changed} occurrence(s).")
+        text = path.read_text(encoding='utf-8-sig')
+        mask = _xna_sprite_code_mask(text)
+        blend_variables = set(re.findall(r'\b(?:SpriteBlendMode|BlendState)\s+(\w+)\b', mask))
+        effect_variables = set(re.findall(r'\b(?:Effect|BasicEffect)\s+(\w+)\b', mask))
+        edits = []
+        for call in re.finditer(r'\.Begin\s*\(', mask):
+            start = call.end()
+            depth = 0
+            pieces = []
+            piece_start = start
+            end = None
+            for position in range(start, len(mask)):
+                character = mask[position]
+                if character == ')' and depth == 0:
+                    pieces.append(text[piece_start:position].strip())
+                    end = position
+                    break
+                if character in '([{':
+                    depth += 1
+                elif character in ')]}':
+                    depth -= 1
+                elif character == ',' and depth == 0:
+                    pieces.append(text[piece_start:position].strip())
+                    piece_start = position + 1
+            if end is None or not pieces or not pieces[0]:
+                continue
+            first = pieces[0]
+            legacy = re.fullmatch(r'SpriteBlendMode\.(None|AlphaBlend|Additive)', first)
+            numeric = re.fullmatch(r'\(\s*SpriteBlendMode\s*\)\s*([012])', first)
+            if legacy:
+                blend = 'BlendState.' + blend_names[legacy[1]]
+            elif numeric:
+                blend = 'BlendState.' + blend_numbers[numeric[1]]
+            elif re.fullmatch(r'BlendState\.(Opaque|AlphaBlend|NonPremultiplied|Additive)', first):
+                # Earlier converter versions left blend-first calls behind. Only
+                # those invalid calls get the legacy AlphaBlend correction.
+                blend = first.replace('BlendState.AlphaBlend', 'BlendState.NonPremultiplied')
+            elif first in blend_variables or first.rsplit('.', 1)[-1] in blend_variables:
+                blend = first
+            else:
+                continue
+            sort = 'SpriteSortMode.Deferred'
+            remaining = pieces[1:]
+            if remaining:
+                sort_arg = remaining.pop(0)
+                numeric_sort = re.fullmatch(r'\(\s*SpriteSortMode\s*\)\s*([0-4])', sort_arg)
+                if numeric_sort:
+                    sort = 'SpriteSortMode.' + sort_numbers[numeric_sort[1]]
+                elif re.fullmatch(r'SpriteSortMode\.\w+', sort_arg):
+                    sort = sort_arg
+                else:
+                    continue
+            if remaining and re.fullmatch(r'(?:SaveStateMode\.(?:None|SaveState)|\(\s*SaveStateMode\s*\)\s*[01])', remaining[0]):
+                saved_state = remaining.pop(0)
+                if saved_state.endswith('SaveState') or re.search(r'\)\s*1$', saved_state):
+                    log_message(f'{path}: legacy SaveState removed; later drawing must set its graphics states explicitly.')
+            effect = None
+            transform = None
+            if len(remaining) > 1:
+                continue
+            if remaining:
+                argument = remaining[0]
+                if argument.startswith('effect:'):
+                    effect = argument.split(':', 1)[1].strip()
+                elif argument in effect_variables or argument.lower().endswith('effect'):
+                    effect = argument
+                else:
+                    transform = argument.removeprefix('transformMatrix:').strip()
+            arguments = [sort, blend]
+            if effect is not None or transform is not None:
+                arguments += ['null', 'null', 'null', effect or 'null']
+                if transform is not None:
+                    arguments.append(transform)
+            edits.append((start, end, ', '.join(arguments)))
+        for start, end, replacement in reversed(edits):
+            text = text[:start] + replacement + text[end:]
+        if edits:
+            path.write_text(text, encoding='utf-8')
+            changed += len(edits)
+            log_message(f'Fixed SpriteBatch.Begin: {path} ({len(edits)} occurrence(s))')
     return changed
 
 
 def fix_xna_sprite_blend_mode(root, log):
-    root = Path(root)
-
-    replacements = {
-        "SpriteBlendMode.AlphaBlend": "BlendState.AlphaBlend",
-        "SpriteBlendMode.Additive": "BlendState.Additive",
-        "SpriteBlendMode.None": "BlendState.Opaque",
-    }
-
+    """Convert calls before replacing enum declarations, including field variables."""
+    fix_xna_spritebatch_begin(root, log)
     total = 0
+    tokens = re.compile(r'SpriteBlendMode\.(?:AlphaBlend|Additive|None)|\(\s*SpriteBlendMode\s*\)\s*[012]|\bSpriteBlendMode\b')
+    replacements = {'AlphaBlend': 'NonPremultiplied', 'Additive': 'Additive', 'None': 'Opaque',
+                    '0': 'Opaque', '1': 'NonPremultiplied', '2': 'Additive'}
+    for file in Path(root).rglob('*.cs'):
+        if any(part.lower() in {'bin', 'obj', '.git'} for part in file.parts):
+            continue
+        original = file.read_text(encoding='utf-8-sig')
+        content = original
+        for match in reversed(list(tokens.finditer(_xna_sprite_code_mask(original)))):
+            token = match.group()
+            if token == 'SpriteBlendMode':
+                replacement = 'BlendState'
+            else:
+                value = token.rsplit('.', 1)[-1] if '.' in token else token[-1]
+                replacement = 'BlendState.' + replacements[value]
+            content = content[:match.start()] + replacement + content[match.end():]
+        if content != original:
+            file.write_text(content, encoding='utf-8')
+            total += 1
+            log(f'Fixed SpriteBlendMode: {file}', 'green')
+    return total
 
-    for file in root.rglob("*.cs"):
-        try:
-            original = file.read_text(encoding="utf-8-sig")
-            content = original
 
-            for old, new in replacements.items():
-                content = content.replace(old, new)
 
-            content = re.sub(
-                r"\bSpriteBlendMode\b",
-                "BlendState",
-                content,
-            )
-
-            if content != original:
-                file.write_text(content, encoding="utf-8")
-                total += 1
-                log(f"Fixed SpriteBlendMode: {file}", "green")
-
-        except Exception as exc:
-            log(f"Error processing {file}: {exc}", "red")
-
-    log(f"SpriteBlendMode conversion complete: {total} files", "green")
 
 
 def fix_skinned_model_effect(root: str | Path, log_message) -> int:
