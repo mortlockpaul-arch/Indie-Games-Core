@@ -1,6 +1,6 @@
 # Indie Games Build Manager (WPF, .NET 10)
 
-A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.15**.
+A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.16**.
 
 The separately distributed [Python frontend](https://pmortlock.itch.io/xenia-game-manager) handles extraction and ILSpy decompilation and launches Build Manager. Both use the same recovered project folders. See the [repository overview and setup guide](../README.md) for the complete workflow.
 
@@ -148,3 +148,7 @@ Choose **Start / resume torrents** in the main window to resume saved downloads 
 ## 1.1.15
 
 Compact Repair Center options with help popups; global Weird Mode in Settings; live game search (Ctrl+F, Enter, Escape); torrent selection follows the matching local game and survives status refreshes. Includes pending source-repair and backup-cleanup improvements.
+
+## 1.1.16
+
+Opening the submission editor lists game folders without recursively inspecting every installed game. Folder discovery supports cancellation. Missing-build errors identify the expected folder and suggest Refresh Files after building. The progress indicator is hidden when no operation is running.

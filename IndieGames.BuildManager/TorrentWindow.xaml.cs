@@ -336,7 +336,10 @@ public partial class TorrentWindow : Window
                 _loadingSourceChoices=true; ShareFolderBox.IsEnabled=false;
                 try {
                     string archive=ArchiveBox.Text.Trim(), selected=_selectedSourceFolder, games=GamesBox.Text.Trim();
-                    var folders=await Task.Run(()=>ShareSelection.SourceFolders(archive).Concat(PortableGames.Scan(games).Select(g=>g.Folder)).ToArray(),token);
+                    ShareSummary.Text = "Loading game choices…";
+                    Log("Loading game choices. Only the selected game will be inspected for sharing.");
+                    var folders=await Task.Run(()=>ShareSelection.AvailableFolders(archive, games, token),token);
+                    token.ThrowIfCancellationRequested();
                     var options=folders.Concat(string.IsNullOrWhiteSpace(selected) ? [] : new[]{selected}).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Path.GetFileName,StringComparer.OrdinalIgnoreCase).Select(f=>new SourceOption(f)).ToArray();
                     ShareFolderBox.ItemsSource=options;
                     ShareFolderBox.SelectedValue=options.FirstOrDefault(o=>o.Folder.Equals(selected,StringComparison.OrdinalIgnoreCase))?.Folder ?? options.FirstOrDefault()?.Folder;
@@ -400,7 +403,7 @@ public partial class TorrentWindow : Window
                 var list=new List<SharePlan>();
                 if(kind is 0 or 2) list.Add(ProjectBundle.Preview(sourceFolder, token));
                 if(kind is 1 or 2) {
-                    if (!Directory.Exists(selection.PlayableGame)) throw new IOException("No playable files found. Build this source project, or import a standalone game through Playable Games / Ports.");
+                    if (!Directory.Exists(selection.PlayableGame)) throw new IOException("No playable build folder found: " + selection.PlayableGame + ". Build the game, then choose Refresh Files, or import a standalone game through Playable Games / Ports.");
                     list.Add(ProjectBundle.Preview(selection.PlayableGame, token, "Game"));
                 }
                 return list.Select(p=>p with { Name=selection.Name }).ToList();

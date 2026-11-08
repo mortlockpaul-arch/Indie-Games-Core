@@ -18,8 +18,8 @@ public sealed class ProjectShareWindow : Window
     private readonly FrameworkElement? _actions;
     private readonly int _actionsIndex;
     private readonly StackPanel _footer;
-    private readonly ProgressBar _progress = new() { Height=8, Maximum=1, Margin=new Thickness(4) };
-    public void SetBusy(bool busy) { _progress.IsIndeterminate=busy; _progress.Value=busy ? 0 : 1; _cancel.IsEnabled=busy; _close.IsEnabled=!busy; _submission.IsEnabled=_submissionUrl != null && !busy; }
+    private readonly ProgressBar _progress = new() { Visibility=Visibility.Collapsed, Height=8, Maximum=1, Margin=new Thickness(4) };
+    public void SetBusy(bool busy) { _progress.IsIndeterminate=busy; _progress.Value=0; _progress.Visibility=busy ? Visibility.Visible : Visibility.Collapsed; _cancel.IsEnabled=busy; _close.IsEnabled=!busy; _submission.IsEnabled=_submissionUrl != null && !busy; }
     public void ShowSubmission(string url, string state) { _submissionUrl=url; _submission.IsEnabled=true; _nextSteps.Text=state + ": " + url + ". Keep Build Manager running to seed your package. The owner must review and merge the submission before other users can see it."; }
     public ProjectShareWindow(Window owner, object form, Func<bool> busy, Action cancel, Action<string> openSubmission, FrameworkElement? actions = null)
     {

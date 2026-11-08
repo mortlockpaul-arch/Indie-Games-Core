@@ -8,11 +8,28 @@ public sealed record ShareSelection(string Source, string PlayableGame, string N
         _ = PortableGames.ResolveExecutable(game.Folder);
         return new(game.Folder, game.Folder, game.Name);
     }
-    public static IReadOnlyList<string> SourceFolders(string archive)
+    // Choosing a folder must not inspect executables or walk the contents of every game.
+    // The selected folder is validated later, during its file preview.
+    public static IReadOnlyList<string> AvailableFolders(string archive, string games, CancellationToken token)
+    {
+        var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var source in SourceFolders(archive, token)) { token.ThrowIfCancellationRequested(); folders.Add(source); }
+        if (Directory.Exists(games)) foreach (var folder in Directory.EnumerateDirectories(games)) {
+            token.ThrowIfCancellationRequested();
+            if (!Path.GetFileName(folder).StartsWith('.') && (File.GetAttributes(folder) & FileAttributes.ReparsePoint) == 0)
+                folders.Add(folder);
+        }
+        return folders.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+    public static IReadOnlyList<string> SourceFolders(string archive, CancellationToken token = default)
     {
         string root=Path.GetFullPath(archive);
         if (!Directory.Exists(root)) return [];
-        var folders=Directory.EnumerateDirectories(root).Where(folder=>(File.GetAttributes(folder)&FileAttributes.ReparsePoint)==0 && Directory.EnumerateFiles(folder,"*.csproj").Any()).ToList();
+                var folders = new List<string>();
+        foreach (var folder in Directory.EnumerateDirectories(root)) {
+            token.ThrowIfCancellationRequested();
+            if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) == 0 && Directory.EnumerateFiles(folder, "*.csproj").Any()) folders.Add(folder);
+        }
         if (Directory.EnumerateFiles(root,"*.csproj").Any()) folders.Add(root);
         return folders.OrderBy(Path.GetFileName,StringComparer.OrdinalIgnoreCase).ToArray();
     }
