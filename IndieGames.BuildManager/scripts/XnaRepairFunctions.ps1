@@ -1,4 +1,6 @@
 ﻿
+. (Join-Path $PSScriptRoot 'Repair-EmbeddedResources.ps1')
+
 function Repair-XnaStorageSave {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
@@ -357,7 +359,7 @@ function Repair-XnaCompatibility {
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
     foreach ($fix in @('Repair-XnaStorageSelector','Repair-XnaOpenContainer','Repair-XnaStorageSave',
                        'Repair-XnaStorageLoad','Repair-XnaStoragePaths','Repair-XnaFileStream','Repair-XnaColors','Repair-XnaResolveTexture2D','Repair-XnaSpriteBatch',"Repair-XnaBloomComponent",
-                       'Repair-XnaSignedInGamerAvatar')) {
+                       'Repair-XnaSignedInGamerAvatar','Repair-EmbeddedResources')) {
         Write-Host "Running $fix" -ForegroundColor Cyan
         & $fix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference
     }

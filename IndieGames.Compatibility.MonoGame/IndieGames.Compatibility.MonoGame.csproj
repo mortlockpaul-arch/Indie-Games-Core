@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup><BaseIntermediateOutputPath>obj\$(MonoGameVariant)\$(GameNetworkBackend)\</BaseIntermediateOutputPath><BaseOutputPath>bin\$(MonoGameVariant)\$(GameNetworkBackend)\</BaseOutputPath></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk"/>
+  <PropertyGroup><TargetFramework>net9.0-windows</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems><Nullable>disable</Nullable><ImplicitUsings>disable</ImplicitUsings><LangVersion>latest</LangVersion><GameNetworkBackend Condition="'$(GameNetworkBackend)' == ''">NetStub</GameNetworkBackend><MonoGamePackage Condition="'$(MonoGamePackage)' == ''">MonoGame.Framework.DesktopGL</MonoGamePackage><MonoGamePackageVersion Condition="'$(MonoGamePackageVersion)' == ''">3.8.1.303</MonoGamePackageVersion><AssemblyName>IndieGames.MonoGame.$(GameNetworkBackend)</AssemblyName></PropertyGroup>
+  <ItemGroup Condition="'$(MonoGameAssembly)' == '' and '$(MonoGameProject)' == ''"><PackageReference Include="$(MonoGamePackage)" Version="$(MonoGamePackageVersion)"/></ItemGroup>
+  <ItemGroup Condition="'$(MonoGameProject)' != ''"><ProjectReference Include="$(MonoGameProject)"/></ItemGroup>
+  <ItemGroup Condition="'$(MonoGameAssembly)' != ''"><Reference Include="MonoGame.Framework"><HintPath>$(MonoGameAssembly)</HintPath></Reference></ItemGroup>
+  <ItemGroup><Compile Include="..\FNA.NetStub\src\Avatar\**\*.cs"/><Compile Include="ScreenSaver.cs"/></ItemGroup>
+  <ItemGroup Condition="'$(GameNetworkBackend)' == 'NetStub'"><Compile Include="..\FNA.NetStub\src\GamerServices\**\*.cs;..\FNA.NetStub\src\Net\**\*.cs"/></ItemGroup>
+  <ItemGroup Condition="'$(GameNetworkBackend)' == 'Steamworks'"><Compile Include="..\FNA.Steamworks\src\GamerServices\**\*.cs;..\FNA.Steamworks\src\Net\**\*.cs"/><ProjectReference Include="..\FNA.Steamworks\Steamworks.NET\Standalone\Steamworks.NET.net9.csproj"/></ItemGroup>
+  <PropertyGroup><_SteamApiDll Condition="'$(PlatformTarget)' == 'x86' or '$(RuntimeIdentifier)' == 'win-x86'">steam_api.dll</_SteamApiDll><_SteamApiDll Condition="'$(_SteamApiDll)' == ''">steam_api64.dll</_SteamApiDll></PropertyGroup>
+  <ItemGroup Condition="'$(GameNetworkBackend)' == 'Steamworks'"><None Include="..\FNA.Steamworks\Steamworks.NET\com.rlabrecque.steamworks.net\Plugins\$(_SteamApiDll)" Link="$(_SteamApiDll)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"/></ItemGroup>
+  <Target Name="ValidateNetworkBackend" BeforeTargets="PrepareForBuild"><Error Condition="'$(GameNetworkBackend)' != 'NetStub' and '$(GameNetworkBackend)' != 'Steamworks'" Text="Choose NetStub or Steamworks."/></Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk"/>
+</Project>

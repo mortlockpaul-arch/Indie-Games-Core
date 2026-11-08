@@ -32,6 +32,24 @@
     </ControlTemplate></Setter.Value></Setter>
    </Style>
    <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#F9FAFB"/></Style>
+   <Style x:Key="RepairCheckBox" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+    <Setter Property="FontSize" Value="14"/><Setter Property="MinHeight" Value="30"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+     <Grid Background="Transparent"><Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border x:Name="Box" Width="20" Height="20" CornerRadius="3" BorderThickness="1" BorderBrush="#94A3B8" Background="#1F2937" VerticalAlignment="Center">
+       <TextBlock x:Name="Tick" Text="✓" FontSize="17" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Hidden"/>
+      </Border>
+      <ContentPresenter Grid.Column="1" Margin="8,3,0,3" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+     </Grid>
+     <ControlTemplate.Triggers>
+      <Trigger Property="IsChecked" Value="True"><Setter TargetName="Tick" Property="Visibility" Value="Visible"/><Setter TargetName="Box" Property="Background" Value="#2563EB"/></Trigger>
+      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="#60A5FA"/></Trigger>
+      <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="White"/><Setter TargetName="Box" Property="BorderThickness" Value="2"/></Trigger>
+      <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+     </ControlTemplate.Triggers>
+    </ControlTemplate></Setter.Value></Setter>
+   </Style>
    <Style TargetType="ComboBox"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="5"/></Style>
    <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/></Style>
    <Style TargetType="DataGridColumnHeader">

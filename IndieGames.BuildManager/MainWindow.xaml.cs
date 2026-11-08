@@ -592,6 +592,29 @@ public static void ScanXnaReferences(string folder)
         return prefix + value.Replace(",", "%2C").Replace(";", "%3B");
     }
 
+    private void BuildProfile_Changed(object sender, SelectionChangedEventArgs e) => UpdateBuildProfileOptions();
+    private void UpdateBuildProfileOptions()
+    {
+        if(GameFrameworkBox==null || NetworkBackendBox==null || MonoGamePlatformBox==null || InstallOverlayButton==null || ProjectsGrid==null || NoRestoreBox==null)return;
+        var selected=Selected();var capabilities=selected.Select(p=>GameBuildProfiles.Inspect(p.Path)).ToArray();
+        bool managed=capabilities.Length>0 && capabilities.All(c=>c.ManagedSource && c.Framework is "FNA" or "MonoGame" or "XNA");
+        foreach(var item in GameFrameworkBox.Items.Cast<ComboBoxItem>().Skip(1)) {
+            item.IsEnabled=managed && (item.Content.ToString()!="XNA → FNA" || capabilities.All(c=>c.Framework is "XNA" or "FNA"));
+            item.ToolTip=item.IsEnabled?"Temporary build profile; source project references are preserved.":"Requires compatible .NET 9+ Windows source projects. Binary-only and legacy XNA projects cannot use this option.";
+        }
+        foreach(var item in NetworkBackendBox.Items.Cast<ComboBoxItem>().Where(i=>i.Content.ToString() is "NetStub" or "Steamworks"))item.IsEnabled=managed;
+        string mode=Value(GameFrameworkBox);
+        MonoGamePlatformBox.IsEnabled=mode=="MonoGame" || mode=="Project default"&&capabilities.Length>0&&capabilities.All(c=>c.Framework=="MonoGame");
+        MonoGameVersionBox.IsEnabled=MonoGamePlatformBox.IsEnabled;
+        MonoGamePlatformPanel.Visibility=MonoGameVersionPanel.Visibility=MonoGamePlatformBox.IsEnabled?Visibility.Visible:Visibility.Collapsed;
+        XnaConversionPanel.Visibility=mode=="XNA → FNA"?Visibility.Visible:Visibility.Collapsed;
+        ConvertXna3BuildBox.IsEnabled=mode=="XNA → FNA";ConvertSceneBuildBox.IsEnabled=mode=="XNA → FNA";
+        bool overlay=capabilities.Length>0 && capabilities.All(c=>c.Overlay) && mode!="XNA → FNA";
+        InstallOverlayButton.IsEnabled=overlay;
+        OverlayAvailabilityNote.Text=mode=="XNA → FNA"?"F1 is unavailable during XNA conversion. Convert/rebuild a supported Windows source project, then install F1 for its source framework.":capabilities.Length==1?capabilities[0].Reason:overlay?"F1 available for selected FNA/MonoGame Windows source projects.":"F1 disabled: select supported .NET 9+ Windows FNA/MonoGame source projects. Legacy XNA and binary-only ports are unsupported.";
+        NoRestoreBox.IsEnabled=capabilities.Length==0 || capabilities.All(c=>c.Framework is "Unknown" or "XNA");
+        BuildProfileNote.Text=capabilities.Length==0?"Select projects to see compatible options.":"Detected: "+string.Join(", ",capabilities.Select(c=>c.Framework).Distinct())+". Framework/network choices apply to this build only. Managed profiles require restore. NetStub is offline compatibility; Steamworks needs a working Steam integration. Source/playable submissions keep their existing format.";
+    }
     private async void Build_Click(object sender, RoutedEventArgs e)
     {
         var selected = Selected();
@@ -602,7 +625,7 @@ public static void ScanXnaReferences(string folder)
             foreach (var project in selected)
             {
                 token.ThrowIfCancellationRequested();
-                string context = $"{Value(ConfigBox)} / {Value(TargetBox)} / {Value(NetworkBackendBox)}";
+                string context = $"{Value(ConfigBox)} / {Value(TargetBox)} / {Value(GameFrameworkBox)} / {Value(NetworkBackendBox)}";
                 string operation = char.ToUpperInvariant(action[0]) + action[1..];
                 project.Status = $"In progress: {operation} ({context})";
                 var warnings = new ConcurrentDictionary<string, byte>();
@@ -615,6 +638,19 @@ public static void ScanXnaReferences(string folder)
                 }
                 try
                 {
+                string core=Path.GetDirectoryName(Path.GetFullPath(_storage.Solution))!;
+                var profile=GameBuildProfiles.Prepare(project.Path,Value(GameFrameworkBox),Value(NetworkBackendBox),Value(MonoGamePlatformBox),MonoGameVersionBox.Text.Trim(),core,_storage.BuildCache);
+                Log($"Build profile: {profile.Framework} / {profile.Network}. Project and submission metadata are unchanged.");
+                if(profile.ConvertXna && action is not ("clean" or "restore")) {
+                    if(ConvertXna3BuildBox.IsChecked!=true && ConvertSceneBuildBox.IsChecked!=true)throw new InvalidOperationException("Choose at least one XNA source conversion option.");
+                    string repair=Path.Combine(AppContext.BaseDirectory,"scripts","repair_xna3.py");if(!File.Exists(repair))repair=_storage.ScriptPath("repair_xna3.py");
+                    if(!File.Exists(repair))throw new FileNotFoundException("The bundled XNA source converter is missing.",repair);
+                    Log("Source conversion backup: "+GameBuildProfiles.BackupConversion(project.Path));
+                    var conversion=new List<string>{"-3","-X","utf8",repair,Path.GetDirectoryName(project.Path)!};
+                    if(ConvertXna3BuildBox.IsChecked==true)conversion.Add("--convert-xna3");if(ConvertSceneBuildBox.IsChecked==true)conversion.Add("--cron-bloom");
+                    int converted=await ProcessRunner.RunAsync("py.exe",conversion,Path.GetDirectoryName(project.Path)!,Log,token);
+                    if(converted!=0)throw new InvalidOperationException("XNA source conversion failed; build was not started. Restore from the logged backup if needed.");
+                }
                 var args = new List<string>();
                 bool vs = UseVsBox.IsChecked == true;
                 string exe = vs ? MsbuildPathBox.Text.Trim() : "dotnet";
@@ -629,9 +665,7 @@ public static void ScanXnaReferences(string folder)
                 args.Add($"-p:Configuration={Value(ConfigBox)}");
                 args.Add($"-p:Platform={Value(PlatformBox)}");
                 args.Add($"-p:PlatformTarget={Value(TargetBox)}");
-                string networkBackend = Value(NetworkBackendBox);
-
-                args.Add($"-p:NetworkBackend={networkBackend}");
+                args.AddRange(profile.Arguments);
                 if (!string.IsNullOrWhiteSpace(FrameworkBox.Text)) args.Add($"-p:TargetFramework={FrameworkBox.Text.Trim()}");
                 if (!string.IsNullOrWhiteSpace(RuntimeBox.Text)) args.Add($"-p:RuntimeIdentifier={RuntimeBox.Text.Trim()}");
                 if (!string.IsNullOrWhiteSpace(DefineConstantsBox.Text))
@@ -642,7 +676,7 @@ public static void ScanXnaReferences(string folder)
                     args.Add($"-p:DefineConstants={symbols}");
                     Log("Note: DefineConstants overrides the project's evaluated symbols for this build.");
                 }
-                if (action != "restore" && !vs && NoRestoreBox.IsChecked == true) args.Add("--no-restore");
+                if (action != "restore" && !vs && NoRestoreBox.IsEnabled && NoRestoreBox.IsChecked == true) args.Add("--no-restore");
                 // Apply MSBuild escaping to every property, including the layout paths.
                 // This prevents commas in game names from becoming extra properties.
                 for (int i = 0; i < args.Count; i++)
@@ -720,6 +754,7 @@ public static void ScanXnaReferences(string folder)
     {
         if (GameSelectionCount == null) return;
         UpdateBuildArchitectureRows();
+        UpdateBuildProfileOptions();
         var selected = Selected();
         var project = ProjectsGrid.SelectedItem as GameProject;
         GameSelectionCount.Text = selected.Count == 0 ? "Select games to build or repair" :
@@ -886,8 +921,8 @@ public static void ScanXnaReferences(string folder)
         string script = _storage.ScriptPath("XnaRepairFunctions.ps1");
 
         var dialog = new Window {
-            Title = "Source and SDK repairs", Width = 820, Height = 600,
-            MinWidth = 650, MinHeight = 450, Owner = this,
+            Title = "Source and SDK Repairs", Width = 960, Height = 760,
+            MinWidth = 800, MinHeight = 560, Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17,24,39)),
             Foreground = Brushes.White
@@ -895,41 +930,42 @@ public static void ScanXnaReferences(string folder)
         var layout = new DockPanel { Margin = new Thickness(14) };
         dialog.Resources[typeof(Button)] = FindResource(typeof(Button));
         dialog.Content = layout;
-        var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); layout.Children.Add(top);
-        top.Children.Add(new TextBlock { Text = "Repair selected games", FontSize = 17, Margin = new Thickness(0,0,0,10) });
+        var top = new StackPanel();
+        top.Children.Add(new TextBlock { Text = "Repair Selected Games", FontSize = 17, Margin = new Thickness(0,0,0,10) });
         top.Children.Add(new TextBlock {
             Text = $"{games.Count} distinct game folder(s) selected. Use Ctrl or Shift in the main grid to change the selection.",
             Margin = new Thickness(0,0,0,10), Foreground = Brushes.LightGray
         });
         var fixers = new[] {
-            ("Storage selector", "Repair-XnaStorageSelector"), ("Open storage", "Repair-XnaOpenContainer"),
-            ("Save games", "Repair-XnaStorageSave"), ("Load games", "Repair-XnaStorageLoad"),
-            ("File access", "Repair-XnaFileStream"), ("Colors", "Repair-XnaColors"),
-            ("Gamer avatars", "Repair-XnaSignedInGamerAvatar"), ("Sprite drawing", "Repair-XnaSpriteBatch"),
+            ("Storage Selector", "Repair-XnaStorageSelector"), ("Open Storage", "Repair-XnaOpenContainer"),
+            ("Save Games", "Repair-XnaStorageSave"), ("Load Games", "Repair-XnaStorageLoad"),
+            ("File Access", "Repair-XnaFileStream"), ("Colors", "Repair-XnaColors"),
+            ("Gamer Avatars", "Repair-XnaSignedInGamerAvatar"), ("Sprite Drawing", "Repair-XnaSpriteBatch"),
+            ("Embedded Resources (Missing Strings)", "Repair-EmbeddedResources"),
             ("XNA 3.x to FNA (Python 3.10+)", "Repair-Xna3"),
-            ("Scene capture (CRON, Avatar Insane Race 3D, Jet Pack War)", "Repair-CronBloom")
+            ("Scene Capture (CRON, Avatar Insane Race 3D, Jet Pack War)", "Repair-CronBloom")
         };
-        top.Children.Add(new TextBlock { Text = "Source repairs", Margin = new Thickness(0,8,0,4) });
-        var fixerPanel = new WrapPanel(); top.Children.Add(fixerPanel);
+        top.Children.Add(new TextBlock { Text = "Source Repairs", Margin = new Thickness(0,8,0,4) });
+        var fixerPanel = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 }; top.Children.Add(fixerPanel);
         var fixerChecks = fixers.Select(name => new CheckBox {
-            Content = name.Item1, Tag = name.Item2, IsChecked = name.Item2 == "Repair-XnaColors",
-            Margin = new Thickness(0,0,16,7), Foreground = Brushes.White
+            Style = (Style)FindResource("RepairCheckBox"), Content = new TextBlock { Text = name.Item1, TextWrapping = TextWrapping.Wrap }, Tag = name.Item2, IsChecked = name.Item2 == "Repair-XnaColors",
+            Margin = new Thickness(0,2,16,2), MinHeight = 32, FontSize = 14, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(6,0,0,0), Foreground = Brushes.White
         }).ToList();
         foreach (var check in fixerChecks) fixerPanel.Children.Add(check);
         var sdkFixers = new[] {
-            ("Missing framework assets (1005)", "Repair-NetSdk1005"),
-            ("Conflicting build folders", "Repair-SharedProjectAssets"),
-            ("Missing runtime assets (1047)", "Repair-SDK1047"),
-            ("Architecture settings (1032)", "Repair-SDK1032"),
-            ("Disable auxiliary DLL projects", "Rename-DllProjects"),
-            ("Restore disabled DLL projects", "Rename-DllProjects-Restore"),
-            ("Format project XML (with backups)", "Format-XbligProjects")
+            ("Missing Framework Assets (1005)", "Repair-NetSdk1005"),
+            ("Conflicting Build Folders", "Repair-SharedProjectAssets"),
+            ("Missing Runtime Assets (1047)", "Repair-SDK1047"),
+            ("Architecture Settings (1032)", "Repair-SDK1032"),
+            ("Disable Auxiliary DLL Projects", "Rename-DllProjects"),
+            ("Restore Disabled DLL Projects", "Rename-DllProjects-Restore"),
+            ("Format Project XML (With Backups)", "Format-XbligProjects")
         };
-        top.Children.Add(new TextBlock { Text = "SDK / project fixes:", Margin = new Thickness(0,8,0,4) });
-        var sdkPanel = new WrapPanel(); top.Children.Add(sdkPanel);
+        top.Children.Add(new TextBlock { Text = "SDK / Project Fixes:", Margin = new Thickness(0,8,0,4) });
+        var sdkPanel = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 }; top.Children.Add(sdkPanel);
         var sdkChecks = sdkFixers.Select(f => new CheckBox {
-            Content = f.Item1, Tag = f.Item2, IsChecked = false,
-            Margin = new Thickness(0,0,16,7), Foreground = Brushes.White
+            Style = (Style)FindResource("RepairCheckBox"), Content = new TextBlock { Text = f.Item1, TextWrapping = TextWrapping.Wrap }, Tag = f.Item2, IsChecked = false,
+            Margin = new Thickness(0,2,16,2), MinHeight = 32, FontSize = 14, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(6,0,0,0), Foreground = Brushes.White
         }).ToList();
         foreach (var check in sdkChecks) sdkPanel.Children.Add(check);
         var sdkRestore = new CheckBox { Content = "Restore packages (shared assets / SDK1032)",
@@ -940,16 +976,16 @@ public static void ScanXnaReferences(string folder)
             IsChecked = true, Foreground = Brushes.White, Margin = new Thickness(0,3,12,3) };
         var sdkOptions = new StackPanel();
         sdkOptions.Children.Add(sdkRestore); sdkOptions.Children.Add(sdkClean); sdkOptions.Children.Add(sdkRids);
-        top.Children.Add(new Expander { Header = "Advanced SDK options", Content = sdkOptions,
+        top.Children.Add(new Expander { Header = "Advanced SDK Options", Content = sdkOptions,
             Foreground = Brushes.White, Margin = new Thickness(0,6,0,6) });
-        var preview = new CheckBox { Content = "Preview only (-WhatIf)", IsChecked = true,
+        var preview = new CheckBox { Content = "Preview Only (-WhatIf)", IsChecked = true,
             Foreground = Brushes.White, Margin = new Thickness(0,6,0,8) };
         top.Children.Add(preview);
         var bottom = new StackPanel(); DockPanel.SetDock(bottom, Dock.Bottom); layout.Children.Add(bottom);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         bottom.Children.Add(actions);
         var cancel = new Button { Content = "Cancel", Margin = new Thickness(5) };
-        var run = new Button { Content = "Run selected repairs", Margin = new Thickness(5) };
+        var run = new Button { Content = "Run Selected Repairs", Margin = new Thickness(5) };
         actions.Children.Add(cancel); actions.Children.Add(run);
         var summary = new TextBlock {
             Text = "Selected games: " + string.Join(", ", games.Take(8).Select(g => g.Name)) +
@@ -957,7 +993,8 @@ public static void ScanXnaReferences(string folder)
             TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray,
             Margin = new Thickness(0,8,0,8)
         };
-        layout.Children.Add(summary);
+        DockPanel.SetDock(summary, Dock.Bottom); layout.Children.Add(summary);
+        layout.Children.Add(new ScrollViewer { Content = top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         cancel.Click += (_, _) => { dialog.DialogResult = false; };
         run.Click += (_, _) => {
             if (games.Count == 0 || !(fixerChecks.Any(c => c.IsChecked == true) || sdkChecks.Any(c => c.IsChecked == true))) {

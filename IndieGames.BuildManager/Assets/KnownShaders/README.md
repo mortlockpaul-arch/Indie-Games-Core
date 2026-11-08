@@ -1,5 +1,7 @@
 # Known Shader Repairs
 
+3D Pixel Art Studio's `InstancedModel` effect is also fingerprinted and recovered with the same decompiler. Its per-instance colour, four transform rows, lighting defaults, and world/view/projection parameter contract are retained. The desktop variant uses standard interpolation for SDL_GPU compatibility; original Xbox visual parity has not been verified.
+
 Repairs match the original XNB SHA-256 before installing a desktop reconstruction. A filename alone is never sufficient. Existing custom HLSL is preserved. Originals are saved under the game's `shader-repair-backups` folder.
 
 The generated `build/KnownShaders.json` and `BuildKnownShaders.ps1` drive an incremental `BuildKnownShaders` MSBuild target. This compiles `.fx` with the Windows SDK `fxc.exe` (`fx_2_0` effect container, shader functions use their declared profile), then writes an FNA-compatible Windows EffectReader XNB. Recompilation requires the matching HLSL; it does not decompile arbitrary Xbox bytecode.

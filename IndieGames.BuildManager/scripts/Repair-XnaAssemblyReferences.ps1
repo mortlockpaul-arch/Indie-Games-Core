@@ -59,9 +59,10 @@ function Repair-XnaAssemblyReferences {
                 $legacy -contains $name
             })
             $fnaRefs = @($xml.SelectNodes("//*[local-name()='ProjectReference']") | Where-Object {
-                $_.GetAttribute('Include') -match '(^|[\\/])FNA\.csproj$'
+                # Contents supplies FNA transitively; do not append a second provider.
+                $_.GetAttribute('Include') -match '(^|[\\/])FNA(?:\.Core|\.Contents)?\.csproj$'
             })
-            $directFnaDllRefs = @($refs | Where-Object { ($_.GetAttribute('Include') -split ',')[0].Trim() -eq 'FNA' })
+            $directFnaDllRefs = @($refs | Where-Object { ($_.GetAttribute('Include') -split ',')[0].Trim() -in @('FNA', 'FNA.Contents') })
             if ($remove.Count -eq 0 -and ($fnaRefs.Count -gt 0 -or $directFnaDllRefs.Count -gt 0)) {
                 Write-Host "Already configured: $($project.Name)"
                 continue

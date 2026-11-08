@@ -7,6 +7,7 @@ internal static class RecoveredShaderTemplates
     internal sealed record Template(string AssetName, string ResourceName);
     internal static readonly Dictionary<string, Template> All = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["09D2833C6E513485393C9344940DB66EBCD6F25D2E9C7106D30B5B8F3386E9F4|InstancedModel"] = new("InstancedModel", "PixelArt.InstancedModel"),
         ["6F91484E2692DE16431FDD73EA6539C69F7BAA15FA476589F0A83E4B272B59D9|armShader"] = new("armShader", "DeadKings.armShader"),
         ["3EF1795385E9E66AFE155DFBDE095B5659F206ED9E50D21BB6D2E51B54E51059|blurShader"] = new("blurShader", "DeadKings.blurShader"),
         ["57A6FE2D0963A3DA13B44FA6A4DCAE024A0AAEC68570AB2C20811F0CB1B60DCF|crackShader"] = new("crackShader", "DeadKings.crackShader"),

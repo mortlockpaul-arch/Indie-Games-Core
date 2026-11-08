@@ -1,6 +1,7 @@
-﻿<Project>
+<Project>
  <PropertyGroup>
   <_BuildManagerProjectKey>$(MSBuildProjectName)-$([MSBuild]::StableStringHash('$(MSBuildProjectFullPath)'))</_BuildManagerProjectKey>
+  <_BuildManagerProjectKey Condition="'$(MonoGameVariant)' != ''">$(_BuildManagerProjectKey)-$(MonoGameVariant)-$(GameNetworkBackend)</_BuildManagerProjectKey>
   <BaseIntermediateOutputPath>$(BuildManagerCache)\obj\$(_BuildManagerProjectKey)\</BaseIntermediateOutputPath>
   <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
   <BaseOutputPath>$(BuildManagerCache)\bin\$(_BuildManagerProjectKey)\</BaseOutputPath>

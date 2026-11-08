@@ -62,8 +62,9 @@ public sealed class LibraryStorage
     public IEnumerable<string> BuildArguments(string project)
     {
         Validate();
-        yield return "-p:CustomAfterDirectoryBuildProps=" + ScriptPath("BuildManager.Layout.props");
-        yield return "-p:CustomBeforeMicrosoftCommonTargets=" + ScriptPath("BuildManager.Layout.targets");
+        string BundledLayout(string name) { string path=Path.Combine(AppContext.BaseDirectory,"scripts",name);return File.Exists(path)?path:ScriptPath(name); }
+        yield return "-p:CustomAfterDirectoryBuildProps=" + BundledLayout("BuildManager.Layout.props");
+        yield return "-p:CustomBeforeMicrosoftCommonTargets=" + BundledLayout("BuildManager.Layout.targets");
         yield return "-p:BuildManagerCache=" + BuildCache;
         yield return "-p:BuildManagerMainProject=" + Path.GetFullPath(project);
         yield return "-p:BuildManagerGameOutput=" + GameFolder(project);

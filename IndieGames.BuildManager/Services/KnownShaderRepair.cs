@@ -46,8 +46,9 @@ public static class KnownShaderRepair
         var project = XDocument.Load(projectPath, LoadOptions.PreserveWhitespace);
         var ns = project.Root!.Name.Namespace;
         var target = project.Root.Elements(ns + "Target").SingleOrDefault(e => (string?)e.Attribute("Name") == TargetName);
+        string scriptCommand = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$(MSBuildProjectDirectory)\\build\\BuildKnownShaders.ps1\" -ProjectRoot \"$(MSBuildProjectDirectory)\" -IntermediateDirectory \"$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'KnownShaders'))\"";
         byte[] script = Resource("BuildKnownShaders.ps1");
-        bool hookReady = target?.Attribute("Label")?.Value == Owner && File.Exists(scriptPath) &&
+        bool hookReady = target?.Attribute("Label")?.Value == Owner && target.Element(ns + "Exec")?.Attribute("Command")?.Value == scriptCommand && File.Exists(scriptPath) &&
             File.ReadAllBytes(scriptPath).AsSpan().SequenceEqual(script);
         var plans = new List<Plan>();
         var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true };
@@ -126,7 +127,6 @@ public static class KnownShaderRepair
         }
         installed = installed.OrderBy(e => e.Asset, StringComparer.OrdinalIgnoreCase).ToList();
         target?.Remove();
-        string scriptCommand = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$(MSBuildProjectDirectory)\\build\\BuildKnownShaders.ps1\" -ProjectRoot \"$(MSBuildProjectDirectory)\" -IntermediateDirectory \"$(MSBuildProjectDirectory)\\$(IntermediateOutputPath)KnownShaders\"";
         string Macro(string path) => "$(MSBuildProjectDirectory)\\" + path.Replace('/', '\\');
         project.Root.Add(new XElement(ns + "Target", new XAttribute("Name", TargetName), new XAttribute("Label", Owner),
             new XAttribute("BeforeTargets", "BeforeBuild"), new XAttribute("Condition", "'$(DesignTimeBuild)' != 'true'"),

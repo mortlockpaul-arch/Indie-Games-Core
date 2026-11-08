@@ -39,6 +39,9 @@ public sealed class ProjectCleanupWindow : Window
         foreach (var column in new[] { ("Action","Action",110d),("Status","Status",130d),("Path","Path",340d),("Reason","Reason",330d),("Disabled destination","Destination",340d) })
             _grid.Columns.Add(new DataGridTextColumn { Header=column.Item1, Binding=new Binding(column.Item2), Width=column.Item3 });
         panel.Children.Add(_grid);
+        var allBackups=new Button { Content="Delete all backups…", ToolTip="Preview backup folders and loose file backups, then move them to the Recycle Bin." };
+        ((Panel)_scan.Parent).Children.Add(allBackups);
+        allBackups.Click+=(_,_)=>new BackupCleanupWindow(_archive){Owner=this}.ShowDialog();
         _scan.Click += async (_,_) => await Scan();
         _apply.Click += async (_,_) => await Apply();
         _cancel.Click += (_,_) => _cts?.Cancel();

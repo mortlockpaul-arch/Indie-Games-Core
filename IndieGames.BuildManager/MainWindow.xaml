@@ -2,6 +2,7 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:services="clr-namespace:IndieGames.BuildManager.Services"
+ xmlns:local="clr-namespace:IndieGames.BuildManager"
  Title="Indie Games Build Manager" Height="900" Width="1400" MinWidth="1000" MinHeight="780"
  WindowStyle="SingleBorderWindow" ResizeMode="CanResize" Icon="/IndieGames.BuildManager;component/DashboardIcon.ico"
  Background="#111827" Foreground="#E5E7EB">
@@ -10,13 +11,12 @@
  </Window.Resources>
  <DockPanel Margin="16">
    <StackPanel DockPanel.Dock="Top">
-     <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <TextBlock Text="Archive directory" Margin="4"/>
-       <TextBox x:Name="RootBox" Grid.Column="1" Text="D:\indie-game-archive"/>
-       <Button Grid.Column="2" Content="Browse..." Click="Browse_Click"/>
-       <Button Grid.Column="3" Content="Scan Projects" Click="Scan_Click"/>
-     </Grid>
-     <StackPanel Margin="4,0,4,2"><ProgressBar x:Name="FolderScanProgress" Height="8" Minimum="0" Maximum="100"/><TextBlock x:Name="FolderScanStatus" Text="Ready To Scan" Foreground="#9CA3AF" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" FontSize="11"/></StackPanel>
+     <DockPanel Margin="4,0,4,10"><TextBlock DockPanel.Dock="Right" Text="{x:Static local:AppVersion.Current}" Foreground="#9CA3AF" FontSize="12" VerticalAlignment="Center"/><TextBlock x:Name="WindowHeading" Text="INDIE GAMES BUILD MANAGER" FontSize="22" FontWeight="SemiBold" Foreground="#F3F4F6"/></DockPanel>
+     <TextBox x:Name="RootBox" Text="D:\indie-game-archive" Visibility="Collapsed"/>
+     <DockPanel Margin="2,0,2,4">
+      <Button x:Name="ScanProjectsButton" DockPanel.Dock="Left" Content="Scan Projects" Click="Scan_Click" Margin="2,0,10,0" MinWidth="110"/>
+      <StackPanel VerticalAlignment="Center"><ProgressBar x:Name="FolderScanProgress" Height="8" Minimum="0" Maximum="100"/><TextBlock x:Name="FolderScanStatus" Text="Ready To Scan" Foreground="#9CA3AF" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" FontSize="11"/></StackPanel>
+     </DockPanel>
      <WrapPanel Margin="2,0,2,6">
        <Button x:Name="CancelScanButton" Style="{StaticResource ToolbarButton}" Content="Cancel Scan" Click="CancelScan_Click" IsEnabled="False"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Storage…" Click="Storage_Click" ToolTip="Storage folders and build cache cleanup"/>
@@ -32,7 +32,7 @@
      </WrapPanel>
    </StackPanel>
    <Grid>
-     <Grid.RowDefinitions><RowDefinition Height="3*" MinHeight="350"/><RowDefinition Height="6"/><RowDefinition Height="2*" MinHeight="160"/></Grid.RowDefinitions>
+     <Grid.RowDefinitions><RowDefinition Height="3*" MinHeight="400"/><RowDefinition Height="6"/><RowDefinition Height="2*" MinHeight="140"/></Grid.RowDefinitions>
      <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <DockPanel x:Name="GamesRegion" Margin="0,0,0,8">
        <StackPanel DockPanel.Dock="Bottom" Margin="0,5,0,0">
@@ -87,18 +87,25 @@
         </DataGrid.Columns>
        </DataGrid>
      </DockPanel>
-     <TabControl x:Name="BuildRepairTabs" Grid.Row="1" MaxHeight="140" Margin="0,0,0,8" Background="#111827" BorderBrush="#374151">
+     <TabControl x:Name="BuildRepairTabs" Grid.Row="1" MaxHeight="300" Margin="0,0,0,8" Background="#111827" BorderBrush="#374151">
       <TabItem Header="Build">
        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" TextElement.Foreground="#E5E7EB">
         <StackPanel Margin="5">
          <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text="Action"/><ComboBox x:Name="ActionBox" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="Build"/><ComboBoxItem Content="Rebuild"/><ComboBoxItem Content="Clean"/><ComboBoxItem Content="Restore"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="1"><TextBlock Text="Configuration"/><ComboBox x:Name="ConfigBox" Style="{StaticResource BuildChoice}" IsEditable="True" Text="Debug"><ComboBoxItem Content="Debug"/><ComboBoxItem Content="Release"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="2"><TextBlock Text="Platform"/><ComboBox x:Name="PlatformBox" SelectionChanged="BuildArchitecture_Changed" LostKeyboardFocus="BuildArchitecture_Changed" Style="{StaticResource BuildChoice}" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="3"><TextBlock Text="Compiler Target"/><ComboBox x:Name="TargetBox" SelectionChanged="BuildArchitecture_Changed" LostKeyboardFocus="BuildArchitecture_Changed" Style="{StaticResource BuildChoice}" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox></StackPanel>
-          <StackPanel Grid.Column="4"><TextBlock Text="Network Backend"/><ComboBox x:Name="NetworkBackendBox" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="NetStub"/><ComboBoxItem Content="Steamworks"/><ComboBoxItem Content="LiteNetLib" IsEnabled="False"/></ComboBox></StackPanel>
+          <StackPanel Grid.Column="4"><TextBlock Text="Network Backend"/><ComboBox x:Name="NetworkBackendBox" SelectionChanged="BuildProfile_Changed" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="None"/><ComboBoxItem Content="NetStub"/><ComboBoxItem Content="Steamworks"/></ComboBox></StackPanel>
+          <StackPanel Grid.Column="5"><TextBlock Text="Game framework"/><ComboBox x:Name="GameFrameworkBox" Style="{StaticResource BuildChoice}" SelectionChanged="BuildProfile_Changed" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="FNA"/><ComboBoxItem Content="MonoGame"/><ComboBoxItem Content="XNA → FNA"/></ComboBox></StackPanel>
          </Grid>
+         <WrapPanel Margin="0,2">
+          <StackPanel x:Name="MonoGamePlatformPanel" MinWidth="160" Visibility="Collapsed"><TextBlock Text="MonoGame platform"/><ComboBox x:Name="MonoGamePlatformBox" Style="{StaticResource BuildChoice}" SelectionChanged="BuildProfile_Changed" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="DesktopGL"/><ComboBoxItem Content="WindowsDX"/></ComboBox></StackPanel>
+          <StackPanel x:Name="MonoGameVersionPanel" Width="135" Visibility="Collapsed"><TextBlock Text="MonoGame version"/><TextBox x:Name="MonoGameVersionBox" Text="3.8.1.303" ToolTip="Used when selecting a new MonoGame package; Project default retains the project's existing version."/></StackPanel>
+          <StackPanel x:Name="XnaConversionPanel" Margin="8,0" Visibility="Collapsed"><CheckBox Style="{StaticResource RepairCheckBox}" x:Name="ConvertXna3BuildBox" FontSize="14" MinHeight="28" VerticalContentAlignment="Center" Padding="5,0" Content="Convert XNA 3.x APIs Before Build" IsChecked="True" ToolTip="Explicit XNA → FNA source conversion; Python 3.10+ required. Creates a source backup."/><CheckBox Style="{StaticResource RepairCheckBox}" x:Name="ConvertSceneBuildBox" FontSize="14" MinHeight="28" VerticalContentAlignment="Center" Padding="5,0" Content="Repair Supported Scene Captures" ToolTip="Optional back-buffer capture repair for CRON, Avatar Insane Race 3D and Jet Pack War."/></StackPanel>
+         </WrapPanel>
+         <TextBlock x:Name="BuildProfileNote" Text="Select a project to see its framework and available build options." TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="#93C5FD" FontSize="11" Margin="5,1"/>
          <WrapPanel>
           <Button Style="{StaticResource BuildAction}" Content="Build" Click="Build_Click" Background="#2563EB"/>
           <Button Style="{StaticResource BuildAction}" x:Name="RunGameButton" Content="Run Game" Click="RunGameButton_Click"/>
@@ -122,10 +129,10 @@
       <TabItem Header="Repairs">
        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" TextElement.Foreground="#E5E7EB">
         <StackPanel Margin="7">
-         <TextBlock Text="Select rows in the grid. Ctrl or Shift selects multiple games. Originals are backed up; rebuild after repairs." TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="11" Margin="3,0,3,9"/>
+         <TextBlock Text="Select rows in the grid. Ctrl or Shift selects multiple games. Originals are backed up; rebuild after repairs." TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="#9CA3AF" FontSize="11" Margin="3,0,3,3"/>
          <WrapPanel>
          <Button Content="Source and SDK Repairs…" Click="BatchXnaFixes_Click" HorizontalAlignment="Left" Background="#2563EB"/>
-         <Button Content="Add F1 Settings Overlay" Click="InstallOverlay_Click" HorizontalAlignment="Left" ToolTip="Install backed-up F1 settings hooks in supported .NET 9+ FNA or MonoGame source games. Rebuild afterward."/>
+         <Button x:Name="InstallOverlayButton" Content="Add F1 Settings Overlay" Click="InstallOverlay_Click" HorizontalAlignment="Left" ToolTip="{Binding Text, ElementName=OverlayAvailabilityNote}"/><TextBlock x:Name="OverlayAvailabilityNote" Visibility="Collapsed" Foreground="#93C5FD" TextWrapping="Wrap" Margin="5"/>
          <Button Content="Convert Compiled XNA Game…" Click="ConvertXnaBinary_Click" ToolTip="Convert an original compiled game in a separate folder using XnaToFna."/>
          </WrapPanel>
          <WrapPanel>
@@ -138,7 +145,7 @@
           <Button Content="Fonts" Click="ConvertXnbFonts_Click" ToolTip="Convert SpriteFonts to Windows XNB"/>
           <Button Content="Textures" Click="ConvertXnbTextures_Click" ToolTip="Convert supported Xbox textures to Windows XNB"/>
          </WrapPanel>
-         <Expander Header="Conversion tools and options" Foreground="#E5E7EB" Margin="3,12,3,4">
+         <Expander Header="Conversion tools and options" Foreground="#E5E7EB" Margin="3,3,3,2">
           <StackPanel Margin="0,7,0,0">
            <TextBlock Text="XNB extractor"/><TextBox x:Name="EffectsExtractorBox" Text="C:\source\xnb-extractor\bin\x64\Release\net9.0-windows\XnbExtractor.exe"/>
            <TextBlock Text="FFmpeg"/><TextBox x:Name="AudioFfmpegBox"/>
@@ -189,6 +196,7 @@
           <DataGrid.Columns>
            <DataGridTextColumn Header="Project" Binding="{Binding Name}" Width="2*"/>
            <DataGridTextColumn Header="Package" Binding="{Binding Kind}" Width="110"/>
+           <DataGridTextColumn Header="Version" Binding="{Binding VersionDisplay}" Width="110"/>
            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="110"/>
            <DataGridTextColumn Header="Progress" Binding="{Binding ProgressDisplay}" Width="80"/>
            <DataGridTextColumn Header="Peers" Binding="{Binding Peers}" Width="55"/>
