@@ -596,7 +596,20 @@ public static void ScanXnaReferences(string folder)
         return prefix + value.Replace(",", "%2C").Replace(";", "%3B");
     }
 
-    private void BuildProfile_Changed(object sender, SelectionChangedEventArgs e) => UpdateBuildProfileOptions();
+    private bool _loadingBuildPreferences;
+    private void BuildProfile_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingBuildPreferences) return;
+        UpdateBuildProfileOptions();
+        if (!_architectureReady) return;
+        var preferences = new ProjectBuildPreferences(Value(GameFrameworkBox), Value(NetworkBackendBox),
+            Value(MonoGamePlatformBox), MonoGameVersionBox.Text.Trim());
+        foreach (var project in Selected())
+        {
+            try { preferences.Save(project.Path); }
+            catch (Exception error) { Log($"Could not save build preferences for {project.Name}: {error.Message}"); }
+        }
+    }
     private void UpdateBuildProfileOptions()
     {
         if(GameFrameworkBox==null || NetworkBackendBox==null || MonoGamePlatformBox==null || InstallOverlayButton==null || ProjectsGrid==null || NoRestoreBox==null)return;
@@ -604,7 +617,7 @@ public static void ScanXnaReferences(string folder)
         bool managed=capabilities.Length>0 && capabilities.All(c=>c.ManagedSource && c.Framework is "FNA" or "MonoGame" or "XNA");
         foreach(var item in GameFrameworkBox.Items.Cast<ComboBoxItem>().Skip(1)) {
             item.IsEnabled=managed && (item.Content.ToString()!="XNA → FNA" || capabilities.All(c=>c.Framework is "XNA" or "FNA"));
-            item.ToolTip=item.IsEnabled?"Temporary build profile; source project references are preserved.":"Requires compatible .NET 9+ Windows source projects. Binary-only and legacy XNA projects cannot use this option.";
+            item.ToolTip=item.IsEnabled?"Saved per-game build preference; source project references are preserved.":"Requires compatible .NET 9+ Windows source projects. Binary-only and legacy XNA projects cannot use this option.";
         }
         foreach(var item in NetworkBackendBox.Items.Cast<ComboBoxItem>().Where(i=>i.Content.ToString() is "NetStub" or "Steamworks"))item.IsEnabled=managed;
         string mode=Value(GameFrameworkBox);
@@ -617,7 +630,7 @@ public static void ScanXnaReferences(string folder)
         InstallOverlayButton.IsEnabled=overlay;
         OverlayAvailabilityNote.Text=mode=="XNA → FNA"?"F1 is unavailable during XNA conversion. Convert/rebuild a supported Windows source project, then install F1 for its source framework.":capabilities.Length==1?capabilities[0].Reason:overlay?"F1 available for selected FNA/MonoGame Windows source projects.":"F1 disabled: select supported .NET 9+ Windows FNA/MonoGame source projects. Legacy XNA and binary-only ports are unsupported.";
         NoRestoreBox.IsEnabled=capabilities.Length==0 || capabilities.All(c=>c.Framework is "Unknown" or "XNA");
-        BuildProfileNote.Text=capabilities.Length==0?"Select projects to see compatible options.":"Detected: "+string.Join(", ",capabilities.Select(c=>c.Framework).Distinct())+". Framework/network choices apply to this build only. Managed profiles require restore. NetStub is offline compatibility; Steamworks needs a working Steam integration. Source/playable submissions keep their existing format.";
+        BuildProfileNote.Text=capabilities.Length==0?"Select projects to see compatible options.":"Detected: "+string.Join(", ",capabilities.Select(c=>c.Framework).Distinct())+". Framework/network choices are saved per game on this computer. Managed profiles require restore. NetStub is offline compatibility; Steamworks needs a working Steam integration. Source/playable submissions keep their existing format.";
     }
     private async void Build_Click(object sender, RoutedEventArgs e)
     {
@@ -761,6 +774,23 @@ public static void ScanXnaReferences(string folder)
         var project = ProjectsGrid.SelectedItem as GameProject;
         if (_architectureReady && selected.Count == 1 && project != null)
         {
+            _loadingBuildPreferences = true;
+            try
+            {
+                var preferences = ProjectBuildPreferences.Load(project.Path);
+                void Choose(ComboBox box, string value) => box.SelectedItem = box.Items.Cast<ComboBoxItem>()
+                    .FirstOrDefault(item => item.Content?.ToString() == value) ?? box.Items[0];
+                Choose(GameFrameworkBox, preferences.Framework);
+                Choose(NetworkBackendBox, preferences.Network);
+                Choose(MonoGamePlatformBox, preferences.MonoPlatform);
+                MonoGameVersionBox.Text = preferences.MonoVersion;
+            }
+            catch (Exception error)
+            {
+                GameFrameworkBox.SelectedIndex = NetworkBackendBox.SelectedIndex = MonoGamePlatformBox.SelectedIndex = 0;
+                Log($"Could not load build preferences for {project.Name}: {error.Message}");
+            }
+            finally { _loadingBuildPreferences = false; }
             _updatingArchitecture = true;
             try
             {
