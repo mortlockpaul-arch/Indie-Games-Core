@@ -329,9 +329,10 @@ public partial class TorrentWindow : Window
         // Reuse the editor and its preview state; it no longer occupies catalogue layout space.
         object form=ShareHost.Content;
         ShareHost.Content=null;
-        var window=new ProjectShareWindow(this,form,()=>_operation != null,()=>_operation?.Cancel(),OpenCatalogueLink,ShareActionsPanel);
+        var window=new ProjectShareWindow(this,form,()=>_operation != null,CancelShareOperation,OpenCatalogueLink,ShareActionsPanel);
         _shareWindow=window;
         window.Loaded += async (_,_) => {
+            bool choicesLoaded = false;
             await RunAsync(async token=> {
                 _loadingSourceChoices=true; ShareFolderBox.IsEnabled=false;
                 try {
@@ -343,13 +344,21 @@ public partial class TorrentWindow : Window
                     var options=folders.Concat(string.IsNullOrWhiteSpace(selected) ? [] : new[]{selected}).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Path.GetFileName,StringComparer.OrdinalIgnoreCase).Select(f=>new SourceOption(f)).ToArray();
                     ShareFolderBox.ItemsSource=options;
                     ShareFolderBox.SelectedValue=options.FirstOrDefault(o=>o.Folder.Equals(selected,StringComparison.OrdinalIgnoreCase))?.Folder ?? options.FirstOrDefault()?.Folder;
+                    choicesLoaded = true;
                 } finally { _loadingSourceChoices=false; ShareFolderBox.IsEnabled=true; }
             });
+            if (!choicesLoaded) return;
             UpdateShareKindForFolder();
             SchedulePreview();
         };
         try { window.ShowDialog(); }
         finally { _previewTimer.Stop(); _previewPending=false; window.DetachForm(); ShareHost.Content=form; _shareWindow=null; }
+    }
+    private void CancelShareOperation()
+    {
+        _previewTimer.Stop(); _previewPending = false; _previewRevision++;
+        _operation?.Cancel();
+        ShareSummary.Text = "Operation cancelled. Choose Refresh Files to prepare a new preview.";
     }
     private void ShareKind_Changed(object sender, RoutedEventArgs e)
     {
