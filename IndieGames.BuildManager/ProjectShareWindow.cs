@@ -9,9 +9,9 @@ public sealed class ProjectShareWindow : Window
 {
     private readonly ScrollViewer _form;
     private readonly TextBox _status = new() { IsReadOnly=true, AcceptsReturn=true, Height=100, TextWrapping=TextWrapping.Wrap, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
-    private readonly Button _submission = new() { Content="View submission", IsEnabled=false };
-    private readonly Button _close = new() { Content="Close window", ToolTip="Return to the main Build Manager window. Completed submissions and seeding are kept." };
-    private readonly Button _cancel = new() { Content="Cancel operation", IsEnabled=false };
+    private readonly Button _submission = new() { Content="View Submission", IsEnabled=false };
+    private readonly Button _close = new() { Content="Close Window", ToolTip="Return to the main Build Manager window. Completed submissions and seeding are kept." };
+    private readonly Button _cancel = new() { Content="Cancel Operation", IsEnabled=false };
     private readonly TextBlock _nextSteps = new() { Text="Review the files, then publish for approval. Approved packages appear in everyone's global catalogue.", TextWrapping=TextWrapping.Wrap, Foreground=Brushes.LightSteelBlue, Margin=new Thickness(4,8,4,4) };
     private string? _submissionUrl;
     private readonly Panel? _actionsParent;
@@ -40,7 +40,7 @@ public sealed class ProjectShareWindow : Window
             parent.Children.Remove(actions); actions.HorizontalAlignment=HorizontalAlignment.Right; _footer.Children.Add(actions);
         }
         var buttons=new WrapPanel { HorizontalAlignment=HorizontalAlignment.Right }; _footer.Children.Add(buttons);
-        var help=new Button { Content="Help / sharing steps" }; help.Click+=(_,_)=>SharingHelpWindow.ShowFor(this); buttons.Children.Add(help);
+        var help=new Button { Content="Help / Sharing Steps" }; help.Click+=(_,_)=>SharingHelpWindow.ShowFor(this); buttons.Children.Add(help);
         _submission.Click+=(_,_)=> { if (_submissionUrl != null) openSubmission(_submissionUrl); }; buttons.Children.Add(_submission);
         _cancel.Click+=(_,_)=>cancel(); buttons.Children.Add(_cancel);
         _close.Click+=(_,_)=>Close(); buttons.Children.Add(_close);

@@ -1,6 +1,6 @@
 # Indie Games Build Manager (WPF, .NET 10)
 
-A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.16**.
+A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.17**.
 
 The separately distributed [Python frontend](https://pmortlock.itch.io/xenia-game-manager) handles extraction and ILSpy decompilation and launches Build Manager. Both use the same recovered project folders. See the [repository overview and setup guide](../README.md) for the complete workflow.
 
@@ -154,3 +154,9 @@ Compact Repair Center options with help popups; global Weird Mode in Settings; l
 Opening the submission editor lists game folders without recursively inspecting every installed game. Folder discovery supports cancellation. Missing-build errors identify the expected folder and suggest Refresh Files after building. The progress indicator is hidden when no operation is running.
 
 Closing the submission window or hiding the catalogue restores and activates the main Build Manager window after modal processing finishes; transfers keep running.
+
+## 1.1.17 — Rye Weird Mode
+
+Repair Center includes Deep Nullability Analysis: evaluates the actual project references, compile items and symbols; traces CS8618 members; and previews nullable annotations for private fields only when recompilation introduces no new warnings or errors. Exposed members, content schemas and lifecycle-dependent access remain in a detailed report. Apply uses backups and rebuilds; build failures revert unchanged repair files. No dummy defaults or blanket warning suppression are added.
+
+The standard Warning Fixer now annotates unused EventHandler sender parameters as nullable and rebuilds to collect fresh diagnostics. Control labels use consistent capitalization, including Weird Mode and Find a Game.

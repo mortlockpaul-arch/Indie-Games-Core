@@ -38,7 +38,7 @@ internal static class Program
             closeCheck.Show(); closeCheck.SetBusy(true); closeCheck.Close();
             if(!closeCheck.IsVisible || cancelledByClose)throw new Exception("Closing a busy submission must not cancel it implicitly");
             var closeControl=(Button)typeof(ProjectShareWindow).GetField("_close",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(closeCheck)!;
-            if(closeControl.IsEnabled || closeControl.Content.ToString()!="Close window")throw new Exception("Busy close action unclear");
+            if(closeControl.IsEnabled || closeControl.Content.ToString()!="Close Window")throw new Exception("Busy close action unclear");
             busyClosing=false;closeCheck.SetBusy(false);closeCheck.Close();closeOwner.Close();
             if(closeCheck.IsVisible)throw new Exception("Idle submission window must close");
             Console.WriteLine("PASS explicit Close window and no implicit submission cancellation");

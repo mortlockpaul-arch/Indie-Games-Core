@@ -1009,7 +1009,7 @@ public static void ScanXnaReferences(string folder)
     {
         Log("Warning Fixer: building to collect current diagnostics…");
         var output = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var arguments = new[] { "build", project, "-c", Value(ConfigBox), "-p:Platform=" + Value(TargetBox), "-v:q", "-p:GenerateFullPaths=true" };
+        var arguments = new[] { "build", project, "-t:Rebuild", "-c", Value(ConfigBox), "-p:Platform=" + Value(TargetBox), "-v:q", "-p:GenerateFullPaths=true" };
         int exit = await ProcessRunner.RunAsync("dotnet", arguments, Path.GetDirectoryName(project)!, line => output.Enqueue(line), token);
         string log = string.Join(Environment.NewLine, output);
         var plan = SourceWarningFixer.Plan(log, Path.GetDirectoryName(project)!);
@@ -1031,6 +1031,39 @@ public static void ScanXnaReferences(string folder)
         return preview ? 0 : exit;
     }
 
+    private async Task<int> RunDeepNullabilityAsync(string project, bool preview, CancellationToken token)
+    {
+        string folder = Path.GetDirectoryName(project)!;
+        Log("Deep Nullability Analysis: resolving the project's source files, references and build symbols…");
+        var output = new ConcurrentQueue<string>();
+        int exit = await ProcessRunner.RunAsync("dotnet", ["msbuild", project, "-target:ResolveReferences",
+            "-getItem:Compile,ReferencePath", "-getProperty:DefineConstants,LangVersion,Nullable",
+            "-p:Platform=" + Value(TargetBox), "-p:Configuration=" + Value(ConfigBox), "-nologo", "-v:q"], folder, output.Enqueue, token);
+        if (exit != 0) { foreach (var line in output) Log(line); return exit; }
+        string json = string.Join(Environment.NewLine, output);
+        int start = json.IndexOf('{');
+        if (start < 0) throw new IOException("MSBuild did not return the evaluated project for deep analysis.");
+        Log("Deep Nullability Analysis: tracing CS8618 members and checking proposed annotations with the compiler…");
+        var plan = await Task.Run(() => DeepNullabilityAnalyzer.Plan(json[start..], folder, token), token);
+        string directory = Path.Combine(_storage.BuildCache, "warning-reports", LibraryStorage.ProjectKey(project));
+        Directory.CreateDirectory(directory);
+        string report = Path.Combine(directory, "deep-nullability-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fffffff") + ".json");
+        File.WriteAllText(report, System.Text.Json.JsonSerializer.Serialize(new { plan.WarningCount, plan.Findings, plan.Blockers,
+            PlannedFiles = plan.Repairs.Files.Select(f => new { f.Path, f.Count }) }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        Log($"Deep Nullability Analysis: {plan.WarningCount} CS8618 warnings; {plan.Findings.Count} members; {plan.Repairs.Files.Sum(f => f.Count)} safe annotations. Report: {report}");
+        foreach (var group in plan.Findings.GroupBy(f => f.Status)) Log($"{group.Key}: {group.Count()} member(s).");
+        if (plan.Blockers.Count > 0) { Log("Source compilation is incomplete; no automatic edits are permitted. See report for blockers."); return 1; }
+        if (preview || plan.Repairs.Files.Count == 0) return 0;
+        token.ThrowIfCancellationRequested();
+        Log("Deep analysis backups: " + SourceWarningFixer.Apply(plan.Repairs, folder));
+        exit = await ProcessRunner.RunAsync("dotnet", ["build", project, "-c", Value(ConfigBox), "-p:Platform=" + Value(TargetBox), "-v:q"], folder, Log, token);
+        if (exit != 0) {
+            foreach (var file in plan.Repairs.Files)
+                if (File.ReadAllText(file.Path) == file.Updated) File.WriteAllBytes(file.Path, file.Original);
+            Log("Deep nullability edits reverted after the build failed; backups and analysis report are retained.");
+        }
+        return exit;
+    }
     private async void BatchXnaFixes_Click(object sender, RoutedEventArgs e)
     {
         string archive = Path.GetFullPath(RootBox.Text.Trim());
@@ -1066,7 +1099,8 @@ public static void ScanXnaReferences(string folder)
         bool repairCronBloom = selectedFixers.Contains("Repair-CronBloom");
         bool repairAmbiguities = selectedFixers.Contains("Repair-Ambiguities");
         bool repairWarnings = selectedFixers.Contains("Repair-Warnings");
-        selectedFixers = selectedFixers.Where(fix => fix is not ("Repair-Xna3" or "Repair-CronBloom" or "Repair-Ambiguities" or "Repair-Warnings")).ToArray();
+        bool deepNullability = selectedFixers.Contains("Repair-DeepNullability");
+        selectedFixers = selectedFixers.Where(fix => fix is not ("Repair-Xna3" or "Repair-CronBloom" or "Repair-Ambiguities" or "Repair-Warnings" or "Repair-DeepNullability")).ToArray();
         string xna3Script = Path.Combine(AppContext.BaseDirectory, "scripts", "repair_xna3.py");
         bool sdkDoRestore = dialog.RestorePackages;
         bool sdkDoClean = dialog.CleanIntermediates;
@@ -1162,6 +1196,8 @@ public static void ScanXnaReferences(string folder)
                     }
                     if (exit == 0 && repairWarnings)
                         exit = await RunWarningFixerAsync(game.Project, whatIf, token);
+                    if (exit == 0 && deepNullability)
+                        exit = await RunDeepNullabilityAsync(game.Project, whatIf, token);
                     if (exit == 0) succeeded++; else { failed++; Log($"FAILED: {game.Name} (exit {exit})"); }
                 }
                 catch (OperationCanceledException) { throw; }

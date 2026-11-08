@@ -26,7 +26,7 @@ public sealed class StorageWindow : Window
         header.Children.Add(new TextBlock { Text = "Manage your solution, library folders and build cache.", Foreground = Brush("#9CA3AF"), Margin = new Thickness(0,5,0,0) });
         var footer = new DockPanel { Margin = new Thickness(0,14,0,0) }; DockPanel.SetDock(footer, Dock.Bottom); layout.Children.Add(footer);
         var footerActions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(footerActions, Dock.Right); footer.Children.Add(footerActions);
-        var save = new Button { Content = "Save settings", Background = Brush("#2563EB"), IsDefault = true };
+        var save = new Button { Content = "Save Settings", Background = Brush("#2563EB"), IsDefault = true };
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         footerActions.Children.Add(cancel); footerActions.Children.Add(save);
         var panel = new StackPanel { Margin = new Thickness(0,0,8,0) };
@@ -39,9 +39,9 @@ public sealed class StorageWindow : Window
             panel.Children.Add(new Border { Background = Brush("#182234"), BorderBrush = Brush("#374151"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(16), Margin = new Thickness(0,0,0,14), Child = section });
             return section;
         }
-        var experience = Section("App experience", "Preferences apply immediately across Build Manager and are remembered.");
+        var experience = Section("App Experience", "Preferences apply immediately across Build Manager and are remembered.");
         var weird = new CheckBox {
-            Content = "Weird mode", IsChecked = NavigationSounds.Shared.Enabled,
+            Content = "Weird Mode", IsChecked = NavigationSounds.Shared.Enabled,
             Foreground = Foreground, Margin = new Thickness(0, 2, 0, 4),
             ToolTip = "Quiet synthesized feedback throughout the app. Turn off to mute immediately."
         };
@@ -50,7 +50,7 @@ public sealed class StorageWindow : Window
         experience.Children.Add(weird);
         experience.Children.Add(new TextBlock { Text = "Quiet sounds for buttons, options and navigation.", FontSize = 12, Foreground = Brush("#9CA3AF"), TextWrapping = TextWrapping.Wrap });
         var solutionSection = Section("Solution", "Add and Remove project actions use this solution automatically.");
-        var foldersSection = Section("Library folders", "Keep source files, playable games, build cache and torrent snapshots in separate folders.");
+        var foldersSection = Section("Library Folders", "Keep source files, playable games, build cache and torrent snapshots in separate folders.");
         string[] labels = ["Source archive", "Playable Windows games", "Disposable build cache", "Torrent snapshots / downloads", "Shared scripts (same folder as the Python app)"];
         string[] values = [storage.Archive, storage.Games, storage.BuildCache, storage.TorrentCache, storage.Scripts];
         for (int i = 0; i < 5; i++)
@@ -73,7 +73,7 @@ public sealed class StorageWindow : Window
             var picker = new OpenFileDialog { Title = "Set solution", Filter = "Solutions (*.sln;*.slnx)|*.sln;*.slnx", CheckFileExists = true };
             if (picker.ShowDialog(this) == true) _solution.Text = picker.FileName;
         };
-        var cleanup = Section("Build cleanup", "Preview disposable build folders before removing them. Source files and torrent snapshots are kept.");
+        var cleanup = Section("Build Cleanup", "Preview disposable build folders before removing them. Source files and torrent snapshots are kept.");
         var buttons = new WrapPanel { Margin = new Thickness(0,0,0,7) }; cleanup.Children.Add(buttons);
         Button Add(string label, RoutedEventHandler action) { var b = new Button { Content = label }; b.Click += action; buttons.Children.Add(b); return b; }
         save.Click += (_, _) => Try(() => {

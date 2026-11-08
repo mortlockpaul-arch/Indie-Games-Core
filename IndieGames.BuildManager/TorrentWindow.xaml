@@ -15,7 +15,7 @@
   <Grid>
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel>
-   <DockPanel><Button Content="Close window" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="CloseCatalogue_Click" ToolTip="Return to Build Manager. Downloads and seeding continue."/><TextBlock Text="Global Project Catalogue" FontSize="22" FontWeight="SemiBold"/></DockPanel>
+   <DockPanel><Button Content="Close Window" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="CloseCatalogue_Click" ToolTip="Return to Build Manager. Downloads and seeding continue."/><TextBlock Text="Global Project Catalogue" FontSize="22" FontWeight="SemiBold"/></DockPanel>
    <TextBlock Text="Download or share source and playable Windows games. Closing this window keeps transfers running; monitor them or use Stop Torrents in the main window." TextWrapping="Wrap"/>
    <TextBlock x:Name="CacheNote" Foreground="#9CA3AF" TextWrapping="Wrap" FontSize="11"/>
    <TextBlock Text="Green rows have a project in your configured solution. Blue marks the current selection." Foreground="#95D5B2" FontSize="11" Margin="0,3"/>

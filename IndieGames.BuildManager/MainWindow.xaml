@@ -27,7 +27,7 @@
        <Button Style="{StaticResource ToolbarButton}" Content="Games / Ports…" Click="PlayableGames_Click"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Catalogue…" Click="TorrentCatalogue_Click"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Merge Catalogue PRs…" Click="MergeCatalogue_Click" ToolTip="Preview and safely merge validated catalogue pull requests as repository administrator"/>
-       <Button Style="{StaticResource ToolbarButton}" Content="Close window" Click="CloseWindow_Click" ToolTip="Close the main window; background seeding continues when enabled"/>
+       <Button Style="{StaticResource ToolbarButton}" Content="Close Window" Click="CloseWindow_Click" ToolTip="Close the main window; background seeding continues when enabled"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Exit Build Manager" Click="FullShutdown_Click" ToolTip="Quit Build Manager and stop all transfers"/>
      </WrapPanel>
    </StackPanel>
@@ -60,10 +60,10 @@
         </Border>
        </StackPanel>
        <DockPanel DockPanel.Dock="Top" Margin="3,0,3,6">
-        <TextBlock DockPanel.Dock="Left" Text="Find a game" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock DockPanel.Dock="Left" Text="Find a Game" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <Button DockPanel.Dock="Right" Content="Clear" Click="ClearGameSearch_Click" ToolTip="Show all games" Padding="10,4" Margin="6,0,0,0"/>
         <TextBlock DockPanel.Dock="Right" Text="{Binding Items.Count, ElementName=ProjectsGrid, StringFormat={}{0} games}" Foreground="#9CA3AF" VerticalAlignment="Center" Margin="10,0,4,0"/>
-        <TextBox x:Name="GameSearchBox" TextChanged="GameSearch_Changed" PreviewKeyDown="GameSearch_KeyDown" VerticalContentAlignment="Center" Padding="8,5" ToolTip="Type part of a game name or folder to filter. Ctrl+F focuses search; Enter selects the first result; Escape clears." AutomationProperties.Name="Find a game"/>
+        <TextBox x:Name="GameSearchBox" TextChanged="GameSearch_Changed" PreviewKeyDown="GameSearch_KeyDown" VerticalContentAlignment="Center" Padding="8,5" ToolTip="Type part of a game name or folder to filter. Ctrl+F focuses search; Enter selects the first result; Escape clears." AutomationProperties.Name="Find a Game"/>
        </DockPanel>
        <DataGrid x:Name="ProjectsGrid" AutoGenerateColumns="False" SelectionMode="Extended" SelectionUnit="FullRow" SelectionChanged="ProjectsGrid_SelectionChanged" IsReadOnly="True"
         RowStyle="{StaticResource ProjectRow}"
@@ -188,7 +188,7 @@
      <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="#374151" ToolTip="Drag to resize the game list and build output / torrents"/>
      <DockPanel x:Name="OutputRegion" Grid.Row="2">
        <StackPanel DockPanel.Dock="Top">
-         <DockPanel><WrapPanel DockPanel.Dock="Right"><Button x:Name="StartTorrentsButton" Content="Start / resume torrents" Click="StartTorrents_Click" Background="#2563EB" ToolTip="Resume saved downloads and seed local packages. If nothing is saved, open the catalogue to choose a project."/><Button Content="Catalogue…" Click="TorrentCatalogue_Click"/><Button x:Name="StopTorrentsButton" Content="Stop torrents" Click="StopTorrents_Click" IsEnabled="False"/></WrapPanel><TextBlock x:Name="TorrentSummary" Text="No Active Torrents" Foreground="#93C5FD" TextWrapping="Wrap" Margin="4"/></DockPanel>
+         <DockPanel><WrapPanel DockPanel.Dock="Right"><Button x:Name="StartTorrentsButton" Content="Start / Resume Torrents" Click="StartTorrents_Click" Background="#2563EB" ToolTip="Resume saved downloads and seed local packages. If nothing is saved, open the catalogue to choose a project."/><Button Content="Catalogue…" Click="TorrentCatalogue_Click"/><Button x:Name="StopTorrentsButton" Content="Stop Torrents" Click="StopTorrents_Click" IsEnabled="False"/></WrapPanel><TextBlock x:Name="TorrentSummary" Text="No Active Torrents" Foreground="#93C5FD" TextWrapping="Wrap" Margin="4"/></DockPanel>
          <TextBlock x:Name="TorrentActivity" Foreground="#9CA3AF" Margin="4,0,4,4" TextTrimming="CharacterEllipsis"/>
        </StackPanel>
        <TabControl x:Name="OutputTabs">

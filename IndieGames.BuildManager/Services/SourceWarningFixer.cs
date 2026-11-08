@@ -31,6 +31,7 @@ public static class SourceWarningFixer
             var root = tree.GetRoot();
             var lines = tree.GetText().Lines;
             var removals = new HashSet<SyntaxNode>();
+            var replacements = new Dictionary<SyntaxNode, SyntaxNode>();
             foreach (var diagnostic in group)
             {
                 string code = diagnostic.Groups["code"].Value;
@@ -67,13 +68,43 @@ public static class SourceWarningFixer
                         if (local) remove = statement;
                     }
                 }
+                else if (code == "CS8622")
+                {
+                    string message = diagnostic.Groups["message"].Value;
+                    // Restrict this to compiler-reported EventHandler sender mismatches.
+                    var handler = Regex.Match(message, @"parameter 'sender' of 'void (?:[\w]+\.)*(?<name>\w+)\(");
+                    if (handler.Success && message.Contains("'EventHandler", StringComparison.Ordinal))
+                    {
+                        var candidates = root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+                            .Where(m => m.Identifier.ValueText == handler.Groups["name"].Value &&
+                                m.ExplicitInterfaceSpecifier == null && !m.Modifiers.Any(SyntaxKind.OverrideKeyword) &&
+                                m.ParameterList.Parameters.Count == 2 &&
+                                m.ParameterList.Parameters[0].Identifier.ValueText == "sender" &&
+                                m.ParameterList.Parameters[0].Type is PredefinedTypeSyntax type && type.Keyword.IsKind(SyntaxKind.ObjectKeyword) &&
+                                m.ParameterList.Parameters[0].Modifiers.Count == 0 && m.ParameterList.Parameters[0].AttributeLists.Count == 0 &&
+                                (m.Body != null || m.ExpressionBody != null) &&
+                                !m.DescendantNodes().OfType<IdentifierNameSyntax>().Any(n => n.Identifier.ValueText == "sender"))
+                            .ToArray();
+                        if (candidates.Length == 1)
+                        {
+                            var parameter = candidates[0].ParameterList.Parameters[0];
+                            var type = parameter.Type!;
+                            replacements[parameter] = parameter.WithType(SyntaxFactory.NullableType(type.WithoutTrivia()).WithTriviaFrom(type));
+                            continue;
+                        }
+                    }
+                }
                 if (remove != null && !remove.DescendantTrivia().Any(t => t.IsDirective)) removals.Add(remove);
                 else review.Add($"{path}({line + 1}): {code}: {diagnostic.Groups["message"].Value}");
             }
-            if (removals.Count > 0)
+            if (removals.Count > 0 || replacements.Count > 0)
             {
-                var updated = root.RemoveNodes(removals, SyntaxRemoveOptions.KeepExteriorTrivia)?.ToFullString() ?? source;
-                if (updated != source) files.Add(new(path, original, updated, removals.Count));
+                // Span-based text changes keep independent removals and annotations from
+                // invalidating each other's syntax-node identities.
+                var changes = removals.Select(node => new Microsoft.CodeAnalysis.Text.TextChange(node.Span, ""))
+                    .Concat(replacements.Select(pair => new Microsoft.CodeAnalysis.Text.TextChange(pair.Key.Span, pair.Value.WithoutTrivia().ToFullString())));
+                var updated = tree.GetText().WithChanges(changes).ToString();
+                if (updated != source) files.Add(new(path, original, updated, removals.Count + replacements.Count));
             }
         }
         return new(files, review.ToArray());
