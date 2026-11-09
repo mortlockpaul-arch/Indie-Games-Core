@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UpdateZxBoxStatus();
         _projectStatuses = new(Path.Combine(Path.GetDirectoryName(LibraryStorage.SettingsPath)!, "project-status-v1"), Log);
         WindowAppearance.SizeToWorkArea(this);
         _logTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(75) };
@@ -193,7 +194,7 @@ public static void ScanXnaReferences(string folder)
         if (_cts != null || _torrentWindow != null) { Log("Finish builds and close torrent sharing before changing storage folders."); return; }
         _storage.Archive = RootBox.Text.Trim();
         var window = new StorageWindow(_storage) { Owner = this };
-        if (window.ShowDialog() == true) { RootBox.Text = _storage.Archive; UpdateSolutionLabel(); Scan(); }
+        if (window.ShowDialog() == true) { RootBox.Text = _storage.Archive; UpdateSolutionLabel(); UpdateZxBoxStatus(); Scan(); }
     }
 
     private PortableGamesWindow? _playableGames;

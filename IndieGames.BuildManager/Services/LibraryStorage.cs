@@ -13,6 +13,7 @@ public sealed class LibraryStorage
     public string TorrentCache { get; set; } = @"D:\indie-torrent-cache";
     public string Solution { get; set; } = @"C:\source\Indie-Games-Core\Indie-Games.slnx";
     public string Scripts { get; set; } = @"C:\PycharmProjects\xenia-game-manager\src\scripts";
+    public string ZxBoxRoot { get; set; } = @"C:\source\ZXSpectrum";
     public string LegacyFnaRuntime { get; set; } = "";
     public static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "IndieGames.BuildManager", "storage.json");
     public static LibraryStorage Load()

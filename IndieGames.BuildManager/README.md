@@ -1,6 +1,6 @@
 # Indie Games Build Manager (WPF, .NET 10)
 
-A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.17**.
+A Windows desktop application for discovering, diagnosing, repairing and rebuilding recovered XNA / Xbox Live Indie Game projects. Current release: **1.1.19**.
 
 The separately distributed [Python frontend](https://pmortlock.itch.io/xenia-game-manager) handles extraction and ILSpy decompilation and launches Build Manager. Both use the same recovered project folders. See the [repository overview and setup guide](../README.md) for the complete workflow.
 
@@ -160,3 +160,13 @@ Closing the submission window or hiding the catalogue restores and activates the
 Repair Center includes Deep Nullability Analysis: evaluates the actual project references, compile items and symbols; traces CS8618 members; and previews nullable annotations for private fields only when recompilation introduces no new warnings or errors. Exposed members, content schemas and lifecycle-dependent access remain in a detailed report. Apply uses backups and rebuilds; build failures revert unchanged repair files. No dummy defaults or blanket warning suppression are added.
 
 The standard Warning Fixer now annotates unused EventHandler sender parameters as nullable and rebuilds to collect fresh diagnostics. Control labels use consistent capitalization, including Weird Mode and Find a Game.
+
+## ZXBox on the main screen
+
+The ZXBox bar opens the Spectrum browser with either FNA or MonoGame. Run ZXBox builds on first use; Build & Run refreshes the selected backend first. Both use x64 Release, with independent outputs under the configured build cache's zxbox/FNA and zxbox/MonoGame folders. The game's selected build profile is independent of ZXBox.
+
+Settings → ZXBox selects the ZXSpectrum checkout. Open Games Folder opens that checkout's Games folder for .z80, .sna, .tap and .tzx files. The renderer is passed that folder explicitly, so both backends use the same library. F1 / Escape opens the ZXBox menu. Cancellation uses the main build Cancel button. ZXBox requires its source checkout and build dependencies; it is not embedded into the Build Manager executable.
+
+## 1.1.19
+
+The Repairs tab and Repair Center show compact rows with descriptions. The main window reserves room for the game grid and keeps build output and torrents visible.

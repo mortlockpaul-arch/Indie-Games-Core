@@ -10,13 +10,16 @@ public sealed class StorageWindow : Window
     
     private readonly TextBox[] _paths = new TextBox[5];
     private readonly TextBox _solution = new();
+    private readonly TextBox _zxBoxRoot = new();
+    private readonly LibraryStorage _original;
     private readonly TextBox _preview = new() { IsReadOnly = true, Height = 160, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, AcceptsReturn = true, FontFamily = new FontFamily("Consolas"), FontSize = 12, Text = "Choose a cleanup preview to see folders and their sizes." };
     private readonly Button _delete = new() { Content = "Delete previewed folders", IsEnabled = false, Margin = new Thickness(4) };
     private IReadOnlyList<CleanupFolder> _folders = [];
     private int _previewVersion;
-    private LibraryStorage Draft() => new() { Archive = _paths[0].Text.Trim(), Games = _paths[1].Text.Trim(), BuildCache = _paths[2].Text.Trim(), TorrentCache = _paths[3].Text.Trim(), Scripts = _paths[4].Text.Trim(), Solution = _solution.Text.Trim() };
+    private LibraryStorage Draft() => new() { Archive = _paths[0].Text.Trim(), Games = _paths[1].Text.Trim(), BuildCache = _paths[2].Text.Trim(), TorrentCache = _paths[3].Text.Trim(), Scripts = _paths[4].Text.Trim(), Solution = _solution.Text.Trim(), ZxBoxRoot = _zxBoxRoot.Text.Trim(), DecompPorts = _original.DecompPorts, LegacyFnaRuntime = _original.LegacyFnaRuntime };
     public StorageWindow(LibraryStorage storage)
     {
+        _original = storage;
         Title = AppVersion.WindowTitle("Settings"); Width = 940; Height = 850; MinWidth = 740; MinHeight = 620; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/IndieGames.BuildManager;component/Themes/ManagerTheme.xaml", UriKind.Relative) });
         Background = Brush("#111827"); Foreground = Brush("#E5E7EB");
@@ -49,6 +52,13 @@ public sealed class StorageWindow : Window
         weird.Unchecked += (_, _) => NavigationSounds.Shared.SetEnabled(false);
         experience.Children.Add(weird);
         experience.Children.Add(new TextBlock { Text = "Quiet sounds for buttons, options and navigation.", FontSize = 12, Foreground = Brush("#9CA3AF"), TextWrapping = TextWrapping.Wrap });
+        var zxBox = Section("ZXBox", "Choose the ZXSpectrum source checkout containing Platforms/ZXBox.FNA and Platforms/ZXBox.Monogame. Main-screen launchers build in x64 Release and use its Games folder.");
+        var zxRow = new DockPanel();
+        var zxBrowse = new Button { Content = "Browse…", MinWidth = 76 };
+        DockPanel.SetDock(zxBrowse, Dock.Right); zxRow.Children.Add(zxBrowse);
+        _zxBoxRoot.Text = storage.ZxBoxRoot; _zxBoxRoot.VerticalContentAlignment = VerticalAlignment.Center;
+        zxRow.Children.Add(_zxBoxRoot); zxBox.Children.Add(zxRow);
+        zxBrowse.Click += (_, _) => { var dialog = new OpenFolderDialog { Title = "Choose ZXBox Checkout" }; if (dialog.ShowDialog(this) == true) _zxBoxRoot.Text = dialog.FolderName; };
         var solutionSection = Section("Solution", "Add and Remove project actions use this solution automatically.");
         var foldersSection = Section("Library Folders", "Keep source files, playable games, build cache and torrent snapshots in separate folders.");
         string[] labels = ["Source archive", "Playable Windows games", "Disposable build cache", "Torrent snapshots / downloads", "Shared scripts (same folder as the Python app)"];
@@ -81,7 +91,7 @@ public sealed class StorageWindow : Window
             if (!Path.IsPathFullyQualified(d.Solution) || !File.Exists(d.Solution) || Path.GetExtension(d.Solution).ToLowerInvariant() is not (".sln" or ".slnx"))
                 throw new IOException("Set an existing .sln or .slnx solution file.");
             if (!Path.IsPathFullyQualified(d.Scripts) || !Directory.Exists(d.Scripts)) throw new IOException("Set an existing shared scripts folder.");
-            d.Save(); storage.Archive=d.Archive; storage.Games=d.Games; storage.BuildCache=d.BuildCache; storage.TorrentCache=d.TorrentCache; storage.Solution=d.Solution; storage.Scripts=d.Scripts; DialogResult=true;
+            d.Save(); storage.Archive=d.Archive; storage.Games=d.Games; storage.BuildCache=d.BuildCache; storage.TorrentCache=d.TorrentCache; storage.Solution=d.Solution; storage.Scripts=d.Scripts; storage.ZxBoxRoot=d.ZxBoxRoot; DialogResult=true;
         });
         Add("Preview build cache", async (_, _) => await Preview(false));
         Add("Preview archive bin / obj", async (_, _) => await Preview(true));

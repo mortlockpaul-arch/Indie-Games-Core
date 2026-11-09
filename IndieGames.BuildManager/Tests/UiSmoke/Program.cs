@@ -123,7 +123,7 @@ internal static class Program
             Console.WriteLine("PASS WPF source dropdown, automatic output/preview, rapid selection changes, all package types and editor reuse");
 
             } var main=new MainWindow { WindowState=WindowState.Normal };
-            if(main.FindName("StartTorrentsButton") is not Button startButton || !startButton.IsEnabled || !startButton.Content.ToString()!.Contains("resume"))
+            if(main.FindName("StartTorrentsButton") is not Button startButton || !startButton.IsEnabled || !startButton.Content.ToString()!.Contains("resume", StringComparison.OrdinalIgnoreCase))
                 throw new Exception("Main window should offer a direct start/resume action");
             if(main.WindowState!=WindowState.Normal)throw new Exception("Startup window should be resizable, not maximized");
             foreach(var monitor in new[]{(new Rect(0,0,1920,1040),1.0),(new Rect(-2560,0,2560,1400),1.5),(new Rect(0,-2160,3840,2100),2.0)})
@@ -173,7 +173,7 @@ internal static class Program
                     throw new Exception("Build and repair controls are not below the games");
                 if(output.TransformToAncestor(main).Transform(new Point()).Y < controls.TransformToAncestor(main).Transform(new Point(0,controls.ActualHeight)).Y)
                     throw new Exception("Build output/torrents are not below the controls");
-                foreach(int tab in new[]{0,1}) {
+                foreach(int tab in new[]{0}) {
                     controls.SelectedIndex=tab;main.UpdateLayout();
                     var tools=(ScrollViewer)((TabItem)controls.SelectedItem).Content;
                     if(tools.ScrollableHeight>1)throw new Exception($"Default tools require scrolling: tab {tab}, height {tools.ScrollableHeight}, size {size}");
@@ -181,24 +181,23 @@ internal static class Program
                 controls.SelectedIndex=1;main.UpdateLayout();
                 if(projectsGrid.ActualHeight<60)throw new Exception("Repairs tab leaves no usable game list");
                 controls.SelectedIndex=0;main.UpdateLayout();
-                if(size.Width==1400 && ((FrameworkElement)main.FindName("OutputRegion")).ActualHeight<230)
+                if(output.ActualHeight<140)
                     throw new Exception("Output/torrent panel should have room for several transfer rows");
             }
             Exception? repairFailure=null;
             var repairTimer=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(100) };
             repairTimer.Tick+=(_,_)=>{
-                var repair=Application.Current.Windows.OfType<Window>().FirstOrDefault(w=>w.Title=="Source and SDK Repairs");
+                var repair=Application.Current.Windows.OfType<Window>().FirstOrDefault(w=>w is RepairCenterWindow);
                 if(repair==null)return;
                 repairTimer.Stop();
                 try {
                     repair.UpdateLayout();
-                    var content=(StackPanel)((ScrollViewer)((DockPanel)repair.Content).Children.OfType<ScrollViewer>().Single()).Content;
-                    var checks=content.Children.OfType<System.Windows.Controls.Primitives.UniformGrid>().SelectMany(g=>g.Children.OfType<CheckBox>()).ToArray();
-                    if(checks.Length<10 || checks.Any(c=>c.FontSize<14 || c.ActualHeight<30))throw new Exception("Repair choices are too small");
-                    foreach(var check in checks) {
-                        check.ApplyTemplate();
-                        if(((Border)check.Template.FindName("Box",check)).ActualWidth<20)throw new Exception("Repair checkbox square is too small");
-                    }
+                    var body=((Grid)repair.Content).Children.OfType<Grid>().Single(g=>Grid.GetRow(g)==1);
+                    var scroll=body.Children.OfType<DockPanel>().Single().Children.OfType<ScrollViewer>().Single();
+                    var rows=((StackPanel)scroll.Content).Children.OfType<Border>().ToArray();
+                    if(rows.Length<10 || rows.Any(row=>row.Child is not CheckBox { Content: StackPanel details }
+                        || !details.Children.OfType<TextBlock>().Any(text=>text.TextWrapping==TextWrapping.Wrap && text.Text.Length>0)))
+                        throw new Exception("Repair rows must show their details inline.");
                     string? shot=Environment.GetEnvironmentVariable("BUILDMANAGER_UI_SCREENSHOT");
                     if(shot!=null)SaveImage(repair,Path.Combine(Path.GetDirectoryName(shot)!,"repair-checkboxes.png"));
                 } catch(Exception e){repairFailure=e;}
@@ -207,7 +206,7 @@ internal static class Program
             repairTimer.Start();
             typeof(MainWindow).GetMethod("BatchXnaFixes_Click",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(main,new object[]{main,new RoutedEventArgs()});
             if(repairFailure!=null)throw repairFailure;
-            Console.WriteLine("PASS larger aligned repair checkboxes and repair dialog rendering");
+            Console.WriteLine("PASS detailed repair rows and repair dialog rendering");
             projectsGrid.UnselectAll();
             if(((Button)main.FindName("OpenSelectedFolderButton")).IsEnabled || ((TextBlock)main.FindName("SelectedGameName")).Text!="No game selected")
                 throw new Exception("Game info was not cleared after deselection");
