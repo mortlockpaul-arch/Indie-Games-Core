@@ -1,0 +1,11 @@
+﻿SunBurn Recovery Summary
+Date: 2026-11-11T01:17:08.4526362+00:00
+Mode: BuildOnly
+Source: C:\source\Indie-Games-Core\SunBurn-Recovery\Runs\Recovery-20261111-010133\Decompiled
+Project: C:\source\Indie-Games-Core\SunBurn-Recovery\Runs\Recovery-20261111-010133\Decompiled\SunBurn.Recovery.csproj
+Build exit code: 0
+Diagnostic warning lines: 388
+Diagnostic error lines: 0
+Log: C:\source\Indie-Games-Core\SunBurn-Recovery\BuildReports\Build-20261111-011700.log
+Elapsed: 8 seconds
+NOTE: Compiler success does not verify FieldRVA initializers, serialization, API equivalence, or runtime behavior.

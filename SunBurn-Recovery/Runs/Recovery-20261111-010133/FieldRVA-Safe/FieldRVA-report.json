@@ -1,0 +1,108 @@
+{
+  "sanitized": "C:\\source\\Indie-Games-Core\\SunBurn-Recovery\\Runs\\Recovery-20261111-010133\\Sanitized\\SynapseGaming-SunBurn-Pro.dll",
+  "rebuilt": "C:\\source\\Indie-Games-Core\\SunBurn-Recovery\\Runs\\Recovery-20261111-010133\\Decompiled\\bin\\x86\\Release\\net9.0-windows\\win-x86\\SynapseGaming-SunBurn-Pro.dll",
+  "output": "C:\\source\\Indie-Games-Core\\SunBurn-Recovery\\Runs\\Recovery-20261111-010133\\FieldRVA-Safe\\SynapseGaming-SunBurn-Pro.dll",
+  "originalFieldRva": 11,
+  "originalBytes": 4037,
+  "rebuiltFieldRva": 7,
+  "alreadyIdentical": 0,
+  "added": 11,
+  "bytesAdded": 4037,
+  "unrelatedExisting": 7,
+  "outputFieldRva": 18,
+  "verified": true,
+  "errors": [],
+  "fields": [
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::0EC231DCDC12E66276D0FFCDA3E599FECD37129E34F1FEDF9C4436905282A853",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 148
+    },
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::25E3E48132FBDBE9B7C0C6C54D7C10A5DE12A105AA3E5DE2A0DC808BF245B7A5",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 3132
+    },
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::533B8C444F951E83EFF7305E3807B66CE0005DE0A2D0A44873C130895A3BE6AA",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 20
+    },
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::75C8FD04AD916AEC3E3D5CB76A452B116B3D4D0912A0A485E9FB8E3D240E210C",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 3
+    },
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::ACD9AB72333CB5CF25BE1D2D8EF5CA3ECA46B2340D459EE055432E0687EF0E1B",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 12
+    },
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::FBE7DD42B9581689EBD96466F688AB5ADFA96384F8188ECCD9E74CB96EC7B77A",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 596
+    },
+    {
+      "field": "\u003CPrivateImplementationDetails\u003E::FEB2616EA1D33AACC4C736333C54D7CF6909F06B0D71674E7EF149474D790EB8",
+      "status": "compiler-generated-or-unmatched",
+      "bytes": 96
+    },
+    {
+      "field": "a.L::l8a",
+      "status": "restored",
+      "bytes": 596
+    },
+    {
+      "field": "a.L::l8_u0013_",
+      "status": "restored",
+      "bytes": 148
+    },
+    {
+      "field": "a.L::l8N",
+      "status": "restored",
+      "bytes": 96
+    },
+    {
+      "field": "a.L::l8l",
+      "status": "restored",
+      "bytes": 3132
+    },
+    {
+      "field": "a.L::l8L",
+      "status": "restored",
+      "bytes": 20
+    },
+    {
+      "field": "a.L::l8w",
+      "status": "restored",
+      "bytes": 12
+    },
+    {
+      "field": "a.L::l8J",
+      "status": "restored",
+      "bytes": 3
+    },
+    {
+      "field": "a.L::l8B",
+      "status": "restored",
+      "bytes": 12
+    },
+    {
+      "field": "a.L::l8s",
+      "status": "restored",
+      "bytes": 3
+    },
+    {
+      "field": "a.L::l8h",
+      "status": "restored",
+      "bytes": 12
+    },
+    {
+      "field": "a.L::l8_u0002_",
+      "status": "restored",
+      "bytes": 3
+    }
+  ],
+  "note": "Extra compiler-generated FieldRVA entries are preserved, not assumed duplicates. Runtime behavior remains unverified."
+}

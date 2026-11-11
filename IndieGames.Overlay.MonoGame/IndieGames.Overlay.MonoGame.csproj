@@ -6,5 +6,6 @@
   <ItemGroup Condition="'$(MonoGameProject)' != ''"><ProjectReference Include="$(MonoGameProject)"/></ItemGroup>
   <ItemGroup Condition="'$(MonoGameAssembly)' != ''"><Reference Include="MonoGame.Framework"><HintPath>$(MonoGameAssembly)</HintPath></Reference></ItemGroup>
   <ItemGroup><Compile Include="..\Shared\GameSettingsOverlay.cs" Link="GameSettingsOverlay.cs"/><Compile Include="..\Shared\OverlayDiagnostics.cs" Link="OverlayDiagnostics.cs"/></ItemGroup>
+  <Import Project="..\Shared\OverlayArchitecture.props"/>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk"/>
 </Project>

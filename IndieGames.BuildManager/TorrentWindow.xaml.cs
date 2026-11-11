@@ -27,6 +27,8 @@ public partial class TorrentWindow : Window
         public string Progress { get; private set; } = "";
         public string Rates { get; private set; } = "";
         public string Peers { get; private set; } = "";
+        public int? CompletedDownloads { get; private set; }
+        public string CompletedDownloadsDisplay => TorrentStatus.FormatCompletedDownloads(CompletedDownloads);
         public string? LastError { get; set; }
         public void Update(ProjectTransfer transfer)
         {
@@ -34,6 +36,7 @@ public partial class TorrentWindow : Window
             Progress = $"{transfer.Manager.Progress:N1}%";
             Rates = $"{transfer.Manager.Monitor.DownloadRate / 1024.0:N0} / {transfer.Manager.Monitor.UploadRate / 1024.0:N0} KB/s";
             Peers = transfer.Manager.OpenConnections.ToString();
+            CompletedDownloads = TorrentStatus.TrackerCompletedDownloads(transfer);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
         }
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -46,6 +49,8 @@ public partial class TorrentWindow : Window
     private readonly HashSet<string> _approved = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _catalogueTimer = new() { Interval=TimeSpan.FromMinutes(5) };
     private Task? _catalogueRefresh;
+    private Task? _trackerScrape;
+    private DateTime _nextTrackerScrape;
     private bool _refreshingCatalogue;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly CancellationTokenSource _lifetime = new();
@@ -126,8 +131,30 @@ public partial class TorrentWindow : Window
         _service.ListenPort = port; _service.AllowPortForwarding = PortForwardingBox.IsChecked == true;
     }
 
+    private async Task RefreshTrackerCountsAsync(IReadOnlyList<ProjectTransfer> transfers)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        foreach (var transfer in transfers)
+        {
+            if (timeout.IsCancellationRequested) break;
+            try { await transfer.Manager.TrackerManager.ScrapeAsync(timeout.Token); }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { break; }
+            catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Tracker scrape failed: {error.Message}"); }
+        }
+    }
+
     private void RefreshTransfers()
     {
+        if (!_closing && DateTime.UtcNow >= _nextTrackerScrape && _trackerScrape?.IsCompleted != false)
+        {
+            var tracked = _service.Transfers.Where(transfer => transfer.Manager.TrackerManager.Tiers.Count > 0).ToArray();
+            if (tracked.Length > 0)
+            {
+                _nextTrackerScrape = DateTime.UtcNow.AddMinutes(5);
+                _trackerScrape = RefreshTrackerCountsAsync(tracked);
+            }
+        }
         foreach (var row in _rows)
         {
             var transfer = _service.Transfers.FirstOrDefault(t => t.Project.InfoHash.Equals(row.Project.InfoHash, StringComparison.OrdinalIgnoreCase));
@@ -570,6 +597,7 @@ public partial class TorrentWindow : Window
         try
         {
             if (_operationTask != null) { try { await _operationTask; } catch { } }
+            if (_trackerScrape != null) await _trackerScrape;
             if (_catalogueRefresh != null) { try { await _catalogueRefresh; } catch { } }
             await _service.DisposeAsync();
         }

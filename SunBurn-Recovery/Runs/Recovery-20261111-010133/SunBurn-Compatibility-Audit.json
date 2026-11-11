@@ -1,0 +1,88 @@
+{
+  "sanitized": {
+    "name": "SynapseGaming-SunBurn-Pro, Version=2.0.18.7, Culture=neutral, PublicKeyToken=null",
+    "types": 466,
+    "publicTypes": 288,
+    "methods": 3966,
+    "fields": 2082,
+    "fieldRvaCount": 11,
+    "fieldRvaBytes": 4037,
+    "resources": [
+      "Microsoft.Xna.Framework.RuntimeProfile",
+      "SynapseGaming.LightingSystem.Effects.Resources-Xbox360.resources"
+    ],
+    "references": [
+      "Microsoft.Xna.Framework, Version=4.0.0.0, Culture=neutral, PublicKeyToken=842cf8be1de50553",
+      "Microsoft.Xna.Framework.Avatar, Version=4.0.0.0, Culture=neutral, PublicKeyToken=842cf8be1de50553",
+      "Microsoft.Xna.Framework.Game, Version=4.0.0.0, Culture=neutral, PublicKeyToken=842cf8be1de50553",
+      "Microsoft.Xna.Framework.Graphics, Version=4.0.0.0, Culture=neutral, PublicKeyToken=842cf8be1de50553",
+      "mscorlib, Version=2.0.5.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e",
+      "System, Version=2.0.5.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e",
+      "System.Xml, Version=2.0.5.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e",
+      "System.Xml.Linq, Version=2.0.5.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35"
+    ]
+  },
+  "rebuilt": {
+    "name": "SynapseGaming-SunBurn-Pro, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+    "types": 474,
+    "publicTypes": 288,
+    "methods": 3959,
+    "fields": 2089,
+    "fieldRvaCount": 7,
+    "fieldRvaBytes": 4007,
+    "resources": [
+      "SunBurn.Recovery.SynapseGaming.LightingSystem.Effects.Resources-Xbox360.resources"
+    ],
+    "references": [
+      "FNA, Version=26.11.0.0, Culture=neutral, PublicKeyToken=null",
+      "FNA.NetStub, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+      "System.Collections, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.ComponentModel, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Runtime, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Text.RegularExpressions, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Threading, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Threading.Thread, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Xml.ReaderWriter, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Xml.XDocument, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+    ]
+  },
+  "restored": {
+    "name": "SynapseGaming-SunBurn-Pro, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+    "types": 474,
+    "publicTypes": 288,
+    "methods": 3959,
+    "fields": 2089,
+    "fieldRvaCount": 18,
+    "fieldRvaBytes": 8044,
+    "resources": [
+      "SunBurn.Recovery.SynapseGaming.LightingSystem.Effects.Resources-Xbox360.resources"
+    ],
+    "references": [
+      "FNA, Version=26.11.0.0, Culture=neutral, PublicKeyToken=null",
+      "FNA.NetStub, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+      "System.Collections, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.ComponentModel, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Runtime, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Text.RegularExpressions, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Threading, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Threading.Thread, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Xml.ReaderWriter, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+      "System.Xml.XDocument, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+    ]
+  },
+  "sanitizedPublicApiCount": 2981,
+  "rebuiltPublicApiCount": 2981,
+  "restoredPublicApiCount": 2981,
+  "missingFromRebuilt": [],
+  "extraInRebuilt": [],
+  "missingFromRestored": [],
+  "differencesBetweenRebuiltAndRestored": [],
+  "duplicateFrameworkTypeCandidates": [
+    "System.Runtime.Serialization.FormatterConverter",
+    "System.Runtime.Serialization.ISerializable",
+    "System.Runtime.Serialization.SerializationEntry",
+    "System.Runtime.Serialization.SerializationInfo",
+    "System.SerializableAttribute"
+  ],
+  "warning": "Signature comparison ignores assembly identity, generic constraints, attributes, method bodies, and serialization behavior. A clean report does not prove runtime compatibility. Framework duplicate candidates are not automatically safe to remove."
+}

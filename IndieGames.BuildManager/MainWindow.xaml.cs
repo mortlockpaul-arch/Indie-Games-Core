@@ -691,11 +691,84 @@ public static void ScanXnaReferences(string folder)
         NoRestoreBox.IsEnabled=capabilities.Length==0 || capabilities.All(c=>c.Framework is "Unknown" or "XNA");
         BuildProfileNote.Text=capabilities.Length==0?"Select projects to see compatible options.":"Detected: "+string.Join(", ",capabilities.Select(c=>c.Framework).Distinct())+". Framework/network choices are saved per game on this computer. Managed profiles require restore. NetStub is offline compatibility; Steamworks needs a working Steam integration. Source/playable submissions keep their existing format.";
     }
+    private async void ScanXnaDlls_Click(object sender, RoutedEventArgs e) => await RunXnaRedirectSelectedAsync(preview: true);
+    private async void PatchXnaDlls_Click(object sender, RoutedEventArgs e) => await RunXnaRedirectSelectedAsync(preview: false);
+
+    private async Task RunXnaRedirectSelectedAsync(bool preview)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more games first."); return; }
+        if (!preview && MessageBox.Show(this,
+            $"Install verified XNA-redirected DLLs for {selected.Count} selected game(s)?\nOriginal source DLLs will not be changed.",
+            "Patch XNA dependencies", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        string config = Value(ConfigBox), arch = Value(TargetBox), framework = FrameworkBox.Text.Trim();
+        await ExecuteAsync(async token => {
+            foreach (var project in selected)
+            {
+                token.ThrowIfCancellationRequested();
+                try { await RedirectGameDllsAsync(project, config, arch, framework, preview, token); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Log($"{project.Name}: XNA redirection failed: {ex.Message}"); project.Status = "XNA redirect failed: " + ex.Message; }
+            }
+        });
+    }
+
+    private async Task<bool> RedirectGameDllsAsync(GameProject project, string config, string arch,
+        string framework, bool preview, CancellationToken token)
+    {
+        string core = Path.GetDirectoryName(Path.GetFullPath(_storage.Solution))!;
+        string script = Path.Combine(core, "tools", "XnaAssemblyRedirector", "Install-XnaRedirectedDlls.ps1");
+        if (!File.Exists(script)) { Log("XNA discovery installer missing: " + script); return false; }
+        string gameRoot = _storage.GameFolder(project.Path);
+        if (!Directory.Exists(gameRoot))
+            gameRoot = Path.GetDirectoryName(Path.GetFullPath(project.Path))!;
+        Log($"{project.Name}: scanning original DLLs under {gameRoot} (root-first discovery).");
+        // Build Manager publishes playable games directly into _storage.GameFolder.
+        // Prefer that real output over stale archive/bin copies.
+        string playable = _storage.GameFolder(project.Path);
+        string output;
+        if (Directory.Exists(playable) &&
+            Directory.EnumerateFiles(playable, "*.exe", SearchOption.TopDirectoryOnly).Any())
+        {
+            output = playable;
+            Log($"{project.Name}: using playable build output: {output}");
+        }
+        else
+        {
+            string bin = Path.Combine(Path.GetDirectoryName(project.Path)!, "bin");
+            if (!Directory.Exists(bin)) { Log($"{project.Name}: no playable or bin output found."); return false; }
+            var candidates = Directory.EnumerateDirectories(bin, "*", SearchOption.AllDirectories)
+                .Where(d => {
+                    var parts = Path.GetRelativePath(bin, d).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    return parts.Any(p => p.Equals(config, StringComparison.OrdinalIgnoreCase)) &&
+                        parts.Any(p => p.Equals(arch, StringComparison.OrdinalIgnoreCase)) &&
+                        (string.IsNullOrWhiteSpace(framework) || parts.Any(p => p.Equals(framework, StringComparison.OrdinalIgnoreCase)));
+                })
+                .Where(d => Directory.EnumerateFiles(d, "*.exe", SearchOption.TopDirectoryOnly).Any())
+                .ToArray();
+            if (candidates.Length != 1) {
+                Log($"{project.Name}: expected one {arch}/{config} runtime folder, found {candidates.Length}.");
+                return false;
+            }
+            output = candidates[0];
+        }
+        Log($"{project.Name}: {(preview ? "discovering" : "patching")} XNA dependencies in {output}");
+        var args = new List<string> { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script,
+            "-GameRoot", gameRoot, "-TargetDirectory", output };
+        if (preview) args.Add("-WhatIf");
+        int exit = await ProcessRunner.RunAsync("powershell.exe", args, core, Log, token);
+        if (exit != 0) { Log($"{project.Name}: redirector exit code {exit}"); return false; }
+        Log($"{project.Name}: XNA dependency {(preview ? "discovery" : "installation")} completed.");
+        return true;
+    }
+
     private async void Build_Click(object sender, RoutedEventArgs e)
     {
         var selected = Selected();
         if (selected.Count == 0) { Log("Select one or more projects."); return; }
         var action = Value(ActionBox).ToLowerInvariant();
+        bool redirectAfterBuild = AutoXnaRedirectBox.IsChecked == true;
+        Log($"XNA DLL auto-redirection: {(redirectAfterBuild ? "enabled" : "disabled")}; action: {action}.");
         await ExecuteAsync(async token =>
         {
             foreach (var project in selected)
@@ -760,6 +833,22 @@ public static void ScanXnaReferences(string folder)
                 Log($"> {exe} {string.Join(" ", args.Select(a => a.Contains(' ') ? "\"" + a + "\"" : a))}");
                     string workingDirectory = vs ? Path.GetDirectoryName(project.Path)! : _storage.SdkWorkingDirectory(project.Path);
                     int code = await ProcessRunner.RunAsync(exe, args, workingDirectory, BuildOutput, token);
+                    if (redirectAfterBuild && code == 0 && (action is "build" or "rebuild"))
+                    {
+                        Log($"=== XNA DLL redirection: {project.Name} [{Value(ConfigBox)}/{Value(TargetBox)}] ===");
+                        bool redirected = await RedirectGameDllsAsync(project, Value(ConfigBox),
+                            Value(TargetBox), FrameworkBox.Text.Trim(), false, token);
+                        if (!redirected)
+                        {
+                            project.Status = "Build succeeded; XNA DLL redirection failed or skipped — see log";
+                            Log($"WARNING: {project.Name}: build succeeded but XNA redirection did not complete.");
+                            continue;
+                        }
+                    }
+                    else if (redirectAfterBuild && (action is "clean" or "restore"))
+                        Log("XNA DLL redirection skipped for Clean/Restore.");
+                    else if (redirectAfterBuild && code != 0)
+                        Log("XNA DLL redirection skipped because the build failed.");
                     project.Status = code == 0
                         ? $"{operation} succeeded ({context}); {warnings.Count} warning(s)" + (action == "clean" ? "; outputs cleaned — rebuild before running" : "")
                         : $"{operation} failed ({context}); exit {code}, {errors.Count} error(s), {warnings.Count} warning(s) — see build log";
@@ -1065,6 +1154,42 @@ public static void ScanXnaReferences(string folder)
         }
         return exit;
     }
+    private async void RepairXnbReferences_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more games first."); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string script = _storage.ScriptPath("Repair-XnbAssemblyReferences.ps1");
+        if (!File.Exists(script)) {
+            MessageBox.Show(this, "Missing fixer: " + script, "XNB assembly repair", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        var choice = MessageBox.Show(this,
+            "YES: Apply XNB reference repairs to selected games.\nNO: Preview repairs (-WhatIf).\nCANCEL: Do nothing.\n\nThis version does not delete C# source files or create compatibility assemblies.",
+            "Repair XNB Assembly References", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+        if (choice == MessageBoxResult.Cancel) return;
+        bool preview = choice == MessageBoxResult.No;
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var names = selected.Select(p => Path.GetFullPath(p.Path))
+            .Where(p => p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(p => Path.GetRelativePath(archive, p).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (names.Length == 0) { Log("No selected projects are inside the archive."); return; }
+        OutputTabs.SelectedIndex = 0;
+        await ExecuteAsync(async token => {
+            foreach (string name in names) {
+                token.ThrowIfCancellationRequested();
+                Log($"=== XNB assembly {(preview ? "preview" : "repair")}: {name} ===");
+                var args = new List<string> { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script,
+                    "-Root", archive, "-Game", name };
+                if (preview) args.Add("-WhatIf");
+                int exit = await ProcessRunner.RunAsync("powershell.exe", args, archive, Log, token);
+                Log($"XNB repair {name}: exit {exit}");
+                if (exit != 0) break;
+            }
+        });
+    }
+
     private async void BatchXnaFixes_Click(object sender, RoutedEventArgs e)
     {
         string archive = Path.GetFullPath(RootBox.Text.Trim());
@@ -1102,12 +1227,30 @@ public static void ScanXnaReferences(string folder)
         bool repairWarnings = selectedFixers.Contains("Repair-Warnings");
         bool deepNullability = selectedFixers.Contains("Repair-DeepNullability");
         selectedFixers = selectedFixers.Where(fix => fix is not ("Repair-Xna3" or "Repair-CronBloom" or "Repair-Ambiguities" or "Repair-Warnings" or "Repair-DeepNullability")).ToArray();
+        // Separate fixer modules are loaded only when their functions are selected.
+        var separateFixerScripts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Repair-EmbeddedResources"] = "Repair-EmbeddedResources.ps1"
+        };
+        var additionalScripts = selectedFixers
+            .Where(separateFixerScripts.ContainsKey)
+            .Select(fix => (Fixer: fix, Script: _storage.ScriptPath(separateFixerScripts[fix])))
+            .ToArray();
+        foreach (var entry in additionalScripts)
+        {
+            if (!File.Exists(entry.Script))
+            {
+                MessageBox.Show(this, $"Script for {entry.Fixer} is missing: {entry.Script}", "Repair Center");
+                return;
+            }
+        }
+        bool needsMainFixerScript = selectedFixers.Any(fix => !separateFixerScripts.ContainsKey(fix));
         string xna3Script = Path.Combine(AppContext.BaseDirectory, "scripts", "repair_xna3.py");
         bool sdkDoRestore = dialog.RestorePackages;
         bool sdkDoClean = dialog.CleanIntermediates;
         bool sdkFixRids = dialog.SetRuntimeIdentifiers;
         string sdkScript = _storage.ScriptPath("BuildSdkRepairs.ps1");
-        if (selectedFixers.Length > 0 && !File.Exists(script)) {
+        if (needsMainFixerScript && !File.Exists(script)) {
             MessageBox.Show(this, "Source repair script is missing: " + script, "Repair Center"); return;
         }
         if (selectedSdkFixers.Length > 0 && !File.Exists(sdkScript)) {
@@ -1128,7 +1271,9 @@ public static void ScanXnaReferences(string folder)
                 // EncodedCommand avoids escaping game names with quotes/apostrophes.
                 string quote(string value) => "'" + value.Replace("'", "''") + "'";
                 string commands = "$ErrorActionPreference='Stop'; " +
-                    "if (" + (selectedFixers.Length > 0 ? "$true" : "$false") + ") { . " + quote(script) + "; " +
+                    "if (" + (selectedFixers.Length > 0 ? "$true" : "$false") + ") { " +
+                    (needsMainFixerScript ? ". " + quote(script) + "; " : "") +
+                    string.Concat(additionalScripts.Select(entry => ". " + quote(entry.Script) + "; ")) +
                     "foreach($fix in @(" + string.Join(",", selectedFixers.Select(quote)) + ")) { " +
                     "if(-not (Get-Command $fix -CommandType Function -ErrorAction SilentlyContinue)) { throw \"Missing fixer: $fix\" }; " +
                     "& $fix -Root " + quote(game.Folder) + (whatIf ? " -WhatIf" : "") +

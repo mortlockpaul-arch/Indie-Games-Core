@@ -122,6 +122,7 @@
           <StackPanel x:Name="MonoGameVersionPanel" Width="135" Visibility="Collapsed"><TextBlock Text="MonoGame version"/><TextBox x:Name="MonoGameVersionBox" Text="3.8.1.303" ToolTip="Used when selecting a new MonoGame package; Project default retains the project's existing version."/></StackPanel>
           <StackPanel x:Name="XnaConversionPanel" Margin="8,0" Visibility="Collapsed"><CheckBox Style="{StaticResource RepairCheckBox}" x:Name="ConvertXna3BuildBox" FontSize="14" MinHeight="28" VerticalContentAlignment="Center" Padding="5,0" Content="Convert XNA 3.x APIs Before Build" IsChecked="True" ToolTip="Explicit XNA → FNA source conversion; Python 3.10+ required. Creates a source backup."/><CheckBox Style="{StaticResource RepairCheckBox}" x:Name="ConvertSceneBuildBox" FontSize="14" MinHeight="28" VerticalContentAlignment="Center" Padding="5,0" Content="Repair Supported Scene Captures" ToolTip="Optional back-buffer capture repair for CRON, Avatar Insane Race 3D and Jet Pack War."/></StackPanel>
          </WrapPanel>
+         <CheckBox x:Name="AutoXnaRedirectBox" Style="{StaticResource RepairCheckBox}" Margin="8,2" Content="Redirect compatible XNA DLLs after successful build" ToolTip="Opt-in: scans original game DLLs, verifies against FNA, patches copies and installs into the selected architecture output."/>
          <TextBlock x:Name="BuildProfileNote" Text="Select a project to see its framework and available build options." TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="#93C5FD" FontSize="11" Margin="5,1"/>
          <WrapPanel>
           <Button Style="{StaticResource BuildAction}" Content="Build" Click="Build_Click" Background="#2563EB"/>
@@ -171,6 +172,14 @@
          <DockPanel Style="{StaticResource RepairRow}">
           <Button Content="Open Repair Center…" Click="BatchXnaFixes_Click" Style="{StaticResource RepairAction}" Background="#2563EB"/>
           <TextBlock Style="{StaticResource RepairDetail}" Text="Choose source and SDK repairs, then preview or apply them."/>
+         </DockPanel>
+         <DockPanel Style="{StaticResource RepairRow}">
+          <StackPanel Orientation="Horizontal"><Button Content="Scan XNA DLLs" Click="ScanXnaDlls_Click" Style="{StaticResource RepairAction}"/><Button Content="Patch XNA DLLs" Click="PatchXnaDlls_Click" Style="{StaticResource RepairAction}"/></StackPanel>
+          <TextBlock Style="{StaticResource RepairDetail}" Text="Discover legacy XNA assembly references, preview or patch compatible DLLs for the selected build architecture."/>
+         </DockPanel>
+         <DockPanel Style="{StaticResource RepairRow}">
+          <Button Content="Repair XNB References…" Click="RepairXnbReferences_Click" Style="{StaticResource RepairAction}"/>
+          <TextBlock Style="{StaticResource RepairDetail}" Text="Preview or repair XNB content-reader assembly names for selected games. Source deletion is not supported by this fixer yet."/>
          </DockPanel>
          <DockPanel Style="{StaticResource RepairRow}">
           <Button x:Name="InstallOverlayButton" Content="Add F1 Settings Overlay" Click="InstallOverlay_Click" Style="{StaticResource RepairAction}" ToolTip="{Binding Text, ElementName=OverlayAvailabilityNote}"/>
@@ -261,6 +270,7 @@
            <DataGridTextColumn Header="Project" Binding="{Binding Name}" Width="2*"/>
            <DataGridTextColumn Header="Package" Binding="{Binding Kind}" Width="110"/>
            <DataGridTextColumn Header="Version" Binding="{Binding VersionDisplay}" Width="110"/>
+           <DataGridTextColumn Header="Downloads" Binding="{Binding CompletedDownloadsDisplay}" SortMemberPath="CompletedDownloads" Width="85"><DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Completed downloads reported by a tracker. A dash means no tracker count is available."/></Style></DataGridTextColumn.HeaderStyle></DataGridTextColumn>
            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="110"/>
            <DataGridTextColumn Header="Progress" Binding="{Binding ProgressDisplay}" Width="80"/>
            <DataGridTextColumn Header="Peers" Binding="{Binding Peers}" Width="55"/>

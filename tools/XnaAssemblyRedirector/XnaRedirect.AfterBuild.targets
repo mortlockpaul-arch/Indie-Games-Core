@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <EnableXnaRedirection Condition="'$(EnableXnaRedirection)' == ''">false</EnableXnaRedirection>
+    <XnaRedirectScript>C:\source\Indie-Games-Core\tools\XnaAssemblyRedirector\Install-XnaRedirectedDlls.ps1</XnaRedirectScript>
+  </PropertyGroup>
+  <Target Name="InstallRedirectedXnaLibraries" AfterTargets="Build"
+          Condition="'$(EnableXnaRedirection)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(IsCrossTargetingBuild)' != 'true' and '$(TargetDir)' != ''">
+    <Error Condition="!Exists('$(XnaRedirectScript)')" Text="Missing XNA redirect script: $(XnaRedirectScript)" />
+    <!-- The final dot normalizes TargetDir's trailing backslash for Windows command-line quoting. -->
+    <Message Importance="high" Text="XNA redirect: game=$(MSBuildProjectDirectory); output=$(TargetDir)." />
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(XnaRedirectScript)&quot; -GameRoot &quot;$(MSBuildProjectDirectory)&quot; -TargetDirectory &quot;$(TargetDir).&quot;" />
+  </Target>
+</Project>

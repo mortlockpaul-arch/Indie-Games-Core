@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <SharedSunBurnProject Condition="'$(SharedSunBurnProject)' == ''">$(IndieGamesCoreRoot)\SunBurn.Decompiled\SynapseGaming-SunBurn-Pro.csproj</SharedSunBurnProject>
+    <SharedSunBurnProject Condition="'$(SharedSunBurnProject)' == ''">$(IndieGamesCoreRoot)\SunBurn-Recovery\Runs\Recovery-20261111-010133\Decompiled\SunBurn.Recovery.csproj</SharedSunBurnProject>
     <UseSharedSunBurn Condition="'$(UseSharedSunBurn)' == ''">true</UseSharedSunBurn>
   </PropertyGroup>
   <ItemGroup Condition="'$(UseSharedSunBurn)' == 'true' and '$(MSBuildProjectName)' != 'SynapseGaming-SunBurn-Pro'">

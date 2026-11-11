@@ -47,6 +47,7 @@
     </DataGridTemplateColumn>
     <DataGridTextColumn Header="Package type" Binding="{Binding KindLabel}" Width="115"/>
     <DataGridTextColumn Header="Version" Binding="{Binding Project.VersionDisplay}" Width="110"/>
+    <DataGridTextColumn Header="Downloads" Binding="{Binding CompletedDownloadsDisplay}" SortMemberPath="CompletedDownloads" Width="85"><DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="ToolTip" Value="Completed downloads reported by a tracker. A dash means no tracker count is available."/></Style></DataGridTextColumn.HeaderStyle></DataGridTextColumn>
     <DataGridTextColumn Header="Publication" Binding="{Binding Publication}" Width="155"/>
     <DataGridTextColumn Header="Created" Binding="{Binding Project.CreatedDisplay}" SortMemberPath="Project.CreatedUtc" Width="115"/>
     <DataGridTextColumn Header="Snapshot" Binding="{Binding Project.SnapshotDisplay}" Width="100"/>

@@ -1,0 +1,57 @@
+{
+  "source": "C:\\source\\Indie-Games-Core\\SunBurn-Recovery\\Runs\\Recovery-20261111-010133\\Sanitized\\SynapseGaming-SunBurn-Pro.dll",
+  "rebuilt": "C:\\source\\Indie-Games-Core\\SunBurn-Recovery\\Runs\\Recovery-20261111-010133\\Decompiled\\bin\\x86\\Release\\net9.0-windows\\win-x86\\SynapseGaming-SunBurn-Pro.dll",
+  "output": "C:\\source\\Indie-Games-Core\\SunBurn-Recovery\\Runs\\Recovery-20261111-010133\\FieldRVA-20261111-010144\\SynapseGaming-SunBurn-Pro.dll",
+  "candidates": 11,
+  "restored": 11,
+  "bytes": 4037,
+  "failures": [],
+  "fields": [
+    {
+      "field": "a.L::l8a",
+      "size": 596
+    },
+    {
+      "field": "a.L::l8_u0013_",
+      "size": 148
+    },
+    {
+      "field": "a.L::l8N",
+      "size": 96
+    },
+    {
+      "field": "a.L::l8l",
+      "size": 3132
+    },
+    {
+      "field": "a.L::l8L",
+      "size": 20
+    },
+    {
+      "field": "a.L::l8w",
+      "size": 12
+    },
+    {
+      "field": "a.L::l8J",
+      "size": 3
+    },
+    {
+      "field": "a.L::l8B",
+      "size": 12
+    },
+    {
+      "field": "a.L::l8s",
+      "size": 3
+    },
+    {
+      "field": "a.L::l8h",
+      "size": 12
+    },
+    {
+      "field": "a.L::l8_u0002_",
+      "size": 3
+    }
+  ],
+  "partial": false,
+  "note": "FieldRVA data restored at metadata level; runtime compatibility not verified"
+}

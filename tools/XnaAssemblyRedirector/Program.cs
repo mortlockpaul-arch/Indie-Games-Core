@@ -21,20 +21,27 @@ internal static class Program
         {
             var opts = Parse(args);
             var mode = opts.GetValueOrDefault("mode", "scan").ToLowerInvariant();
-            if (mode is not ("scan" or "patch" or "verify")) throw new ArgumentException("--mode must be scan, patch, or verify");
+            if (mode == "apply") mode = "patch";
+            if (mode is not ("scan" or "patch" or "verify" or "verify-members" or "sanitize")) throw new ArgumentException("--mode must be scan, patch, verify, verify-members, or sanitize");
             if (!opts.TryGetValue("input", out var input)) throw new ArgumentException("Missing --input <dll-or-folder>");
             var files = Directory.Exists(input)
                 ? Directory.EnumerateFiles(input, "*.dll", SearchOption.TopDirectoryOnly).ToArray()
                 : new[] { Path.GetFullPath(input) };
             if (files.Length == 0) { Console.WriteLine("No DLLs found"); return 0; }
             string? fnaPath = opts.GetValueOrDefault("fna");
-            string? stubPath = opts.GetValueOrDefault("stub");
+            string? stubPath = opts.GetValueOrDefault("netstub") ?? opts.GetValueOrDefault("stub");
             string? output = opts.GetValueOrDefault("output");
+            if (mode == "sanitize" && string.IsNullOrWhiteSpace(output))
+                throw new ArgumentException("Sanitize requires --output <folder>");
             if (mode == "patch" && (string.IsNullOrWhiteSpace(fnaPath) || string.IsNullOrWhiteSpace(output)))
                 throw new ArgumentException("Patch requires --fna <FNA.dll> and --output <folder>");
 
+            if (mode == "patch" && !Directory.Exists(input) && !File.Exists(input))
+                throw new FileNotFoundException("Input not found", input);
             var fnaTypes = LoadTypes(fnaPath);
             var stubTypes = LoadTypes(stubPath);
+            var fnaDefinitions = LoadDefinitions(fnaPath);
+            var stubDefinitions = LoadDefinitions(stubPath);
             var replacement = LoadTypes(opts.GetValueOrDefault("replacement"));
             int failures = 0, patched = 0;
             foreach (var file in files)
@@ -43,12 +50,18 @@ internal static class Program
                 {
                     using var assembly = AssemblyDefinition.ReadAssembly(file, new ReaderParameters { InMemory = true });
                     var module = assembly.MainModule;
+                    if (mode == "sanitize")
+                    {
+                        SanitizeAssembly(assembly, file, output!, opts.ContainsKey("strip-strong-name"));
+                        patched++;
+                        continue;
+                    }
                     var xna = module.AssemblyReferences.Where(r => r.Name.StartsWith("Microsoft.Xna.Framework", StringComparison.OrdinalIgnoreCase)).ToArray();
                     Console.WriteLine($"[{Path.GetFileName(file)}] XNA references: {xna.Length}");
                     foreach (var r in xna) Console.WriteLine($"  {r.FullName}");
                     var dependentReferences = replacement == null ? Array.Empty<AssemblyNameReference>() :
                         module.AssemblyReferences.Where(r => r.Name.Equals(replacement.Value.assembly.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
-                    if (mode == "scan" || (xna.Length == 0 && dependentReferences.Length == 0)) continue;
+                    if (mode == "scan" || (xna.Length == 0 && dependentReferences.Length == 0 && mode != "verify-members")) continue;
                     foreach (var reference in dependentReferences)
                     {
                         Console.WriteLine($"  Replacement dependency: {reference.FullName} -> {replacement!.Value.assembly.FullName}");
@@ -129,6 +142,21 @@ internal static class Program
                         continue;
                     }
 
+                    if (mode == "verify-members" || mode == "patch")
+                    {
+                        var memberProblems = VerifyMembers(module, typeMappings, fnaDefinitions, stubDefinitions);
+                        if (memberProblems.Count > 0)
+                        {
+                            foreach (var problem in memberProblems)
+                                Console.WriteLine($"  INCOMPATIBLE: {problem}");
+                            Console.WriteLine($"  FAILED: {memberProblems.Count} incompatible member reference(s)");
+                            failures++;
+                            continue;
+                        }
+                        Console.WriteLine("  Member verification passed (methods, constructors and fields)");
+                        if (mode == "verify-members") continue;
+                    }
+
                     if (mode == "verify")
                     {
                         Console.WriteLine(
@@ -136,6 +164,25 @@ internal static class Program
                             $"({typeMappings.Count} type references mapped; members NOT verified)");
 
                         continue;
+                    }
+                    // Strong-name removal is explicitly opt-in and only affects the output copy.
+                    bool stripStrongName = opts.ContainsKey("strip-strong-name");
+                    bool isStrongNamed = assembly.Name.HasPublicKey ||
+                        (module.Attributes & ModuleAttributes.StrongNameSigned) != 0;
+
+                    if (isStrongNamed && !stripStrongName)
+                    {
+                        Console.WriteLine("  SKIPPED: strong-named assembly; use --strip-strong-name to patch a test copy");
+                        failures++;
+                        continue;
+                    }
+
+                    if (isStrongNamed)
+                    {
+                        Console.WriteLine("  Removing strong-name identity from output assembly");
+                        assembly.Name.PublicKey = Array.Empty<byte>();
+                        assembly.Name.HasPublicKey = false;
+                        module.Attributes &= ~ModuleAttributes.StrongNameSigned;
                     }
                     // Rewrite each mapped XNA type reference to its actual replacement assembly.
                     foreach (var (type, targetAssembly) in typeMappings)
@@ -159,36 +206,450 @@ internal static class Program
                         type.Scope = targetReference;
                     }
 
-                    // Remove original XNA references only if no remaining metadata uses them.
-                    // Do not remove an assembly reference merely because GetTypeReferences()
-                    // no longer reports a matching type: other metadata may still depend on it.
-                    // Preserve untouched XNA references only if not remapped; remove mapped ones
-                    // if no TypeReference still uses them (method and field refs share TypeRefs).
-                    // Keep original XNA assembly references for now.
-                    // The new typeMappings dictionary handles type-level redirection.
-                    //
-                    // A future metadata verification pass can safely remove
-                    // unused XNA assembly references.
+                    // Remove only XNA references no longer used by any TypeReference or ExportedType.
+                    // These checks are deliberately conservative; never delete a live reference.
+                    int removed = 0;
+                    foreach (var oldReference in xna)
+                    {
+                        bool usedByTypes = module.GetTypeReferences().Any(t =>
+                            IsScopedTo(t, oldReference));
+                        bool usedByExports = module.ExportedTypes.Any(t =>
+                            IsExportScopedTo(t, oldReference));
+                        if (!usedByTypes && !usedByExports)
+                        {
+                            module.AssemblyReferences.Remove(oldReference);
+                            removed++;
+                        }
+                    }
+                    var remaining = module.AssemblyReferences.Count(r =>
+                        r.Name.StartsWith("Microsoft.Xna.Framework", StringComparison.OrdinalIgnoreCase));
+                    Console.WriteLine($"  Redirected types: {typeMappings.Count}; removed XNA references: {removed}; remaining: {remaining}");
+                    if (remaining != 0)
+                    {
+                        Console.WriteLine("  SKIPPED: original XNA references remain; refusing to write partial patch");
+                        failures++;
+                        continue;
+                    }
                     Directory.CreateDirectory(output!);
                     var destination = Path.Combine(output!, Path.GetFileName(file));
                     if (Path.GetFullPath(destination).Equals(Path.GetFullPath(file), StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException("Output must differ from original folder");
-                    if (assembly.Name.HasPublicKey)
-                    {
-                        Console.WriteLine("  SKIPPED: strong-named assembly; rewriting would invalidate its signature");
-                        failures++;
-                        continue;
-                    }
                     assembly.Write(destination);
+                    using (var check = AssemblyDefinition.ReadAssembly(destination))
+                    {
+                        var leftover = check.MainModule.AssemblyReferences.Where(r =>
+                            r.Name.StartsWith("Microsoft.Xna.Framework", StringComparison.OrdinalIgnoreCase)).ToArray();
+                        if (leftover.Length != 0)
+                        {
+                            File.Delete(destination);
+                            throw new InvalidOperationException($"Post-write validation failed: {leftover.Length} XNA references remain");
+                        }
+                        if (isStrongNamed && (check.Name.HasPublicKey ||
+                            (check.MainModule.Attributes & ModuleAttributes.StrongNameSigned) != 0))
+                        {
+                            File.Delete(destination);
+                            throw new InvalidOperationException("Post-write validation failed: strong-name metadata remains");
+                        }
+                    }
                     patched++;
-                    Console.WriteLine($"  PATCHED: {destination} (type-level check only; member compatibility unverified)");
+                    Console.WriteLine($"  PATCHED: {destination} (type and member metadata checked)");
                 }
-                catch (Exception ex) { failures++; Console.Error.WriteLine($"ERROR {file}: {ex.Message}"); }
+                catch (Exception ex) { failures++; Console.Error.WriteLine($"ERROR {file}: {ex}"); }
             }
             Console.WriteLine($"Finished: {files.Length} scanned, {patched} patched, {failures} skipped/failed");
             return failures > 0 ? 2 : 0;
         }
-        catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+        catch (Exception ex) { Console.Error.WriteLine($"ERROR {ex}"); return 1; }
+    }
+
+    // Recovery-only mode: rename invalid metadata identifiers before ILSpy decompilation.
+    // This is not a general-purpose deobfuscator; it must not replace production binaries.
+    private static void SanitizeAssembly(AssemblyDefinition assembly, string source, string output,
+        bool stripStrongName)
+    {
+        var module = assembly.MainModule;
+        bool signed = assembly.Name.HasPublicKey ||
+            (module.Attributes & ModuleAttributes.StrongNameSigned) != 0;
+        if (signed && !stripStrongName)
+            throw new InvalidOperationException("Strong-named input: add --strip-strong-name for a recovery copy");
+
+        static bool Bad(char ch) => char.IsControl(ch) || char.IsSurrogate(ch) ||
+            char.IsWhiteSpace(ch) || ch == '\u200b' || ch == '\u200c' || ch == '\u200d';
+        static string Clean(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "_unnamed";
+            var sb = new System.Text.StringBuilder();
+            foreach (char ch in value)
+                if (Bad(ch)) sb.Append("_u").Append(((int)ch).ToString("X4")).Append('_');
+                else sb.Append(ch);
+            if (char.IsDigit(sb[0])) sb.Insert(0, "_id_");
+            return sb.ToString();
+        }
+        static IEnumerable<TypeDefinition> Types(TypeDefinition type)
+        {
+            yield return type;
+            foreach (var nested in type.NestedTypes)
+                foreach (var t in Types(nested)) yield return t;
+        }
+        static string Unique(string desired, HashSet<string> used)
+        {
+            if (used.Add(desired)) return desired;
+            for (int n = 1; ; n++)
+            {
+                var candidate = desired + "_recovered_" + n;
+                if (used.Add(candidate)) return candidate;
+            }
+        }
+        var types = module.Types.SelectMany(Types).ToArray();
+        var rename = new Dictionary<MemberReference, string>();
+        var typeNames = new Dictionary<TypeDefinition, (string name, string ns)>();
+
+        // Reserve names per declaring namespace / enclosing type, so newly cleaned
+        // names cannot collide with existing types. Rename nested types that would
+        // have the same C# identifier as their enclosing type.
+        var usedTypeNames = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var type in types)
+        {
+            string ns = string.IsNullOrEmpty(type.Namespace) ? "" : Clean(type.Namespace);
+            string scope = type.DeclaringType == null ? "namespace:" + ns :
+                "parent:" + type.DeclaringType.MetadataToken.ToInt32();
+            if (!usedTypeNames.TryGetValue(scope, out var used))
+                usedTypeNames[scope] = used = new HashSet<string>(StringComparer.Ordinal);
+            string name = Clean(type.Name);
+            if (type.DeclaringType != null &&
+                name == typeNames[type.DeclaringType].name)
+                name += "_nested";
+            name = Unique(name, used);
+            typeNames[type] = (name, ns);
+        }
+        foreach (var type in types)
+        {
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            // A field/property/event cannot share an identifier with another
+            // field/property/event, or with a method group in C#.
+            foreach (var nested in type.NestedTypes) used.Add(typeNames[nested].name);
+            foreach (var field in type.Fields)
+                rename[field] = Unique(Clean(field.Name), used);
+            foreach (var prop in type.Properties)
+                rename[prop] = Unique(Clean(prop.Name), used);
+            foreach (var ev in type.Events)
+                rename[ev] = Unique(Clean(ev.Name), used);
+            // Keep overloaded methods in the same name group; do not rename
+            // constructors or CLR special-name methods.
+            var methodNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var method in type.Methods)
+            {
+                if (method.IsConstructor || method.Name is ".ctor" or ".cctor")
+                {
+                    rename[method] = method.Name;
+                    continue;
+                }
+                string cleaned = Clean(method.Name);
+                if (!methodNames.TryGetValue(method.Name, out var mapped))
+                {
+                    if (cleaned == typeNames[type].name) cleaned += "_method";
+                    mapped = Unique(cleaned, used);
+                    methodNames[method.Name] = mapped;
+                }
+                rename[method] = mapped;
+            }
+        }
+        // Capture reference-to-definition mappings BEFORE renaming the definitions.
+        // Cecil references and definitions can be different objects.
+        var typeRefs = module.GetTypeReferences().ToArray();
+        var memberRefs = module.GetMemberReferences().ToArray();
+        var typeFixes = new List<(TypeReference reference, string name, string ns)>();
+        var memberFixes = new List<(MemberReference reference, string name)>();
+        foreach (var tr in typeRefs)
+        {
+            try
+            {
+                var def = tr.Resolve();
+                if (def != null && typeNames.TryGetValue(def, out var newName))
+                    typeFixes.Add((tr, newName.name, newName.ns));
+            }
+            catch (AssemblyResolutionException) { }
+        }
+        // IL operands are not guaranteed to be returned by GetMemberReferences().
+        // In particular, MemberRef/MethodSpec operands can retain the original
+        // control-character names after their MethodDef/FieldDef is renamed.
+        // Capture *every* operand before changing definitions, then update it.
+        var allReferences = new HashSet<MemberReference>(ReferenceEqualityComparer.Instance);
+        foreach (var mr in memberRefs) allReferences.Add(mr);
+        foreach (var type in types)
+            foreach (var method in type.Methods)
+                if (method.HasBody)
+                    foreach (var instruction in method.Body.Instructions)
+                        if (instruction.Operand is MemberReference mr)
+                            allReferences.Add(mr);
+
+        // Fallback to exact original name and signature within the original
+        // declaring type when Cecil's Resolve() cannot resolve a self-reference.
+        MemberReference? FindDefinition(MemberReference mr)
+        {
+            try
+            {
+                var resolved = mr switch
+                {
+                    MethodReference m => (MemberReference?)m.Resolve(),
+                    FieldReference f => f.Resolve(),
+                    _ => null
+                };
+                if (resolved != null && rename.ContainsKey(resolved)) return resolved;
+            }
+            catch (AssemblyResolutionException) { }
+            catch (InvalidOperationException) { }
+
+            // Some obfuscated metadata contains MemberReferences without a
+            // DeclaringType. These cannot be safely matched by signature.
+            if (mr.DeclaringType == null) return null;
+            TypeDefinition? declaring;
+            try { declaring = mr.DeclaringType.Resolve(); }
+            catch (AssemblyResolutionException) { return null; }
+            catch (InvalidOperationException) { return null; }
+            catch (NullReferenceException) { return null; }
+            if (declaring == null || !typeNames.ContainsKey(declaring)) return null;
+            if (mr is FieldReference fr)
+                return declaring.Fields.FirstOrDefault(f => f.Name == fr.Name &&
+                    f.FieldType.FullName == fr.FieldType.FullName);
+            if (mr is MethodReference methodRef)
+            {
+                // Name, generic arity, and full parameter/return types are
+                // needed to disambiguate overloaded obfuscated methods.
+                return declaring.Methods.FirstOrDefault(m =>
+                    m.Name == methodRef.Name &&
+                    m.GenericParameters.Count == methodRef.GenericParameters.Count &&
+                    m.Parameters.Count == methodRef.Parameters.Count &&
+                    m.ReturnType.FullName == methodRef.ReturnType.FullName &&
+                    m.Parameters.Select(x => x.ParameterType.FullName)
+                        .SequenceEqual(methodRef.Parameters.Select(x => x.ParameterType.FullName)));
+            }
+            return null;
+        }
+        foreach (var mr in allReferences)
+        {
+            var def = FindDefinition(mr);
+            if (def != null && rename.TryGetValue(def, out var newName))
+                memberFixes.Add((mr, newName));
+        }
+        int changed = 0;
+        foreach (var type in types)
+        {
+            var (name, ns) = typeNames[type];
+            if (type.Name != name) { type.Name = name; changed++; }
+            if (type.Namespace != ns) { type.Namespace = ns; changed++; }
+            foreach (var method in type.Methods)
+            {
+                // Parameter names must be unique within each method. Obfuscated
+                // empty names previously all became "_unnamed" (CS0100).
+                var usedParameterNames = new HashSet<string>(StringComparer.Ordinal);
+                for (int parameterIndex = 0; parameterIndex < method.Parameters.Count; parameterIndex++)
+                {
+                    var param = method.Parameters[parameterIndex];
+                    var cleaned = Clean(param.Name);
+                    if (cleaned == "_unnamed") cleaned = "param_" + parameterIndex;
+                    var uniqueName = Unique(cleaned, usedParameterNames);
+                    if (param.Name != uniqueName) { param.Name = uniqueName; changed++; }
+                }
+                foreach (var gp in method.GenericParameters)
+                {
+                    var cleaned = Clean(gp.Name);
+                    if (gp.Name != cleaned) { gp.Name = cleaned; changed++; }
+                }
+            }
+            foreach (var gp in type.GenericParameters)
+            {
+                var cleaned = Clean(gp.Name);
+                if (gp.Name != cleaned) { gp.Name = cleaned; changed++; }
+            }
+        }
+        foreach (var (def, name) in rename)
+            if (def.Name != name) { def.Name = name; changed++; }
+        foreach (var (reference, name, ns) in typeFixes)
+        {
+            reference.Name = name;
+            reference.Namespace = ns;
+        }
+        foreach (var (reference, name) in memberFixes)
+        {
+            // Mono.Cecil does not permit renaming MethodSpecification.
+            if (reference is Mono.Cecil.MethodSpecification)
+                continue;
+
+            if (reference.Name != name)
+                reference.Name = name;
+        }
+        if (signed)
+        {
+            assembly.Name.PublicKey = Array.Empty<byte>();
+            assembly.Name.HasPublicKey = false;
+            module.Attributes &= ~ModuleAttributes.StrongNameSigned;
+        }
+        Directory.CreateDirectory(output);
+        var destination = Path.Combine(output, Path.GetFileName(source));
+        if (Path.GetFullPath(destination).Equals(Path.GetFullPath(source), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Output must differ from original folder");
+        assembly.Write(destination);
+        Console.WriteLine($"  SANITIZED: {changed} identifiers; {typeFixes.Count} type references and {memberFixes.Count} member reference objects mapped");
+        Console.WriteLine($"  Output: {destination}");
+        Console.WriteLine("  Recovery only: cross-assembly references and all obfuscation patterns are NOT repaired");
+    }
+
+    private static bool IsScopedTo(TypeReference type, AssemblyNameReference reference)
+    {
+        while (type is TypeSpecification specification)
+            type = specification.ElementType;
+        while (type.DeclaringType != null)
+            type = type.DeclaringType;
+        return ReferenceEquals(type.Scope, reference);
+    }
+
+    private static bool IsExportScopedTo(ExportedType type, AssemblyNameReference reference)
+    {
+        return ReferenceEquals(type.Scope, reference);
+    }
+
+    private static Dictionary<string, TypeDefinition>? LoadDefinitions(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        using var assembly = AssemblyDefinition.ReadAssembly(path);
+        var definitions = new Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
+        void Add(TypeDefinition type)
+        {
+            definitions[type.FullName] = type;
+            foreach (var nested in type.NestedTypes) Add(nested);
+        }
+        foreach (var type in assembly.MainModule.Types) Add(type);
+        return definitions;
+    }
+
+    private static List<string> VerifyMembers(
+        ModuleDefinition module,
+        Dictionary<TypeReference, AssemblyNameReference> mappings,
+        Dictionary<string, TypeDefinition>? fna,
+        Dictionary<string, TypeDefinition>? stub)
+    {
+        var issues = new SortedSet<string>(StringComparer.Ordinal);
+        var mapped = mappings.ToDictionary(x => x.Key.FullName, x => x.Value.Name, StringComparer.Ordinal);
+        foreach (var member in module.GetMemberReferences())
+        {
+            var declaring = Unwrap(member.DeclaringType);
+            var originalScope = declaring.Scope as AssemblyNameReference;
+            string? target = mapped.GetValueOrDefault(declaring.FullName);
+            if (target == null && originalScope != null &&
+                (originalScope.Name.Equals("FNA", StringComparison.OrdinalIgnoreCase) ||
+                 originalScope.Name.Equals("FNA.NetStub", StringComparison.OrdinalIgnoreCase)))
+                target = originalScope.Name;
+            if (target == null) continue;
+
+            var types = target.Equals("FNA", StringComparison.OrdinalIgnoreCase) ? fna : stub;
+            if (types == null || !types.TryGetValue(declaring.FullName, out var definition))
+            {
+                issues.Add($"{member.FullName}: target type not found in {target}");
+                continue;
+            }
+
+            // GenericInstanceMethod represents a call-site instantiation. Compare its
+            // generic method definition, not the instantiated argument list.
+            if (member is MethodReference method)
+            {
+                var source = method is GenericInstanceMethod instance
+                    ? instance.ElementMethod : method;
+                bool found = GetHierarchy(definition, types).SelectMany(t => t.Methods).Any(candidate =>
+                    candidate.Name == source.Name &&
+                    candidate.HasThis == source.HasThis &&
+                    candidate.GenericParameters.Count == source.GenericParameters.Count &&
+                    candidate.Parameters.Count == source.Parameters.Count &&
+                    SameType(candidate.ReturnType, source.ReturnType) &&
+                    candidate.Parameters.Zip(source.Parameters,
+                        (left, right) => SameType(left.ParameterType, right.ParameterType)).All(equal => equal));
+                if (!found)
+                {
+                    issues.Add($"METHOD {method.FullName} -> {target}");
+                    var candidates = GetHierarchy(definition, types)
+                        .SelectMany(t => t.Methods)
+                        .Where(m => m.Name == source.Name).Take(5).ToArray();
+                    if (candidates.Length == 0)
+                        Console.WriteLine($"    No method named {source.Name} found in loaded {target} type hierarchy");
+                    foreach (var candidate in candidates)
+                    {
+                        var reasons = new List<string>();
+                        if (candidate.HasThis != source.HasThis) reasons.Add("static/instance mismatch");
+                        if (candidate.GenericParameters.Count != source.GenericParameters.Count) reasons.Add("generic arity mismatch");
+                        if (candidate.Parameters.Count != source.Parameters.Count) reasons.Add("parameter count mismatch");
+                        if (!SameType(candidate.ReturnType, source.ReturnType)) reasons.Add("return type mismatch");
+                        for (int i = 0; i < Math.Min(candidate.Parameters.Count, source.Parameters.Count); i++)
+                            if (!SameType(candidate.Parameters[i].ParameterType, source.Parameters[i].ParameterType))
+                                reasons.Add($"parameter {i + 1} mismatch: {candidate.Parameters[i].ParameterType.FullName} vs {source.Parameters[i].ParameterType.FullName}");
+                        Console.WriteLine($"    Candidate: {candidate.FullName}");
+                        Console.WriteLine($"    Reason: {(reasons.Count == 0 ? "signature matches; investigate metadata ownership" : string.Join("; ", reasons))}");
+                    }
+                }
+            }
+            else if (member is FieldReference field)
+            {
+                bool found = GetHierarchy(definition, types).SelectMany(t => t.Fields).Any(candidate =>
+                    candidate.Name == field.Name && SameType(candidate.FieldType, field.FieldType));
+                if (!found)
+                {
+                    issues.Add($"FIELD {field.FullName} -> {target}");
+                    foreach (var candidate in GetHierarchy(definition, types).SelectMany(t => t.Fields)
+                        .Where(f => f.Name == field.Name).Take(5))
+                        Console.WriteLine($"    Field candidate: {candidate.FullName}; type match: {SameType(candidate.FieldType, field.FieldType)}");
+                }
+            }
+        }
+        return issues.ToList();
+    }
+
+    private static TypeReference Unwrap(TypeReference type)
+    {
+        while (type is TypeSpecification spec) type = spec.ElementType;
+        while (type.DeclaringType != null) type = type.DeclaringType;
+        return type;
+    }
+
+    private static IEnumerable<TypeDefinition> GetHierarchy(
+        TypeDefinition definition, Dictionary<string, TypeDefinition> types)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        for (TypeDefinition? current = definition;
+             current != null && visited.Add(current.FullName);)
+        {
+            yield return current;
+            var baseType = current.BaseType;
+            current = baseType != null && types.TryGetValue(Unwrap(baseType).FullName, out var parent)
+                ? parent : null;
+        }
+    }
+
+    // Compare structural signatures; Cecil generic parameter names/owners are not stable
+    // across assemblies. Position and kind (method vs type) are the relevant identity.
+    private static bool SameType(TypeReference left, TypeReference right)
+    {
+        if (left is GenericParameter lg && right is GenericParameter rg)
+            return lg.Type == rg.Type && lg.Position == rg.Position;
+        if (left is GenericInstanceType li && right is GenericInstanceType ri)
+            return SameType(li.ElementType, ri.ElementType) &&
+                   li.GenericArguments.Count == ri.GenericArguments.Count &&
+                   li.GenericArguments.Zip(ri.GenericArguments, SameType).All(x => x);
+        if (left is ArrayType la && right is ArrayType ra)
+            return la.Rank == ra.Rank && SameType(la.ElementType, ra.ElementType);
+        if (left is ByReferenceType lb && right is ByReferenceType rb)
+            return SameType(lb.ElementType, rb.ElementType);
+        if (left is PointerType lp && right is PointerType rp)
+            return SameType(lp.ElementType, rp.ElementType);
+        if (left is OptionalModifierType lom && right is OptionalModifierType rom)
+            return SameType(lom.ModifierType, rom.ModifierType) && SameType(lom.ElementType, rom.ElementType);
+        if (left is RequiredModifierType lrm && right is RequiredModifierType rrm)
+            return SameType(lrm.ModifierType, rrm.ModifierType) && SameType(lrm.ElementType, rrm.ElementType);
+        // TypeDefinition and TypeReference can describe the same CLR type.
+        // Comparing their Cecil runtime classes produces false negatives.
+        // All structural wrappers above have already been handled.
+        if (left is TypeSpecification || right is TypeSpecification ||
+            left is GenericParameter || right is GenericParameter)
+            return false;
+        return string.Equals(left.FullName, right.FullName, StringComparison.Ordinal);
     }
 
     private static (AssemblyNameReference assembly, HashSet<string> types)? LoadTypes(string? path)
@@ -216,7 +677,12 @@ internal static class Program
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < args.Length; i++)
         {
-            if (!args[i].StartsWith("--") || i + 1 >= args.Length)
+            if (args[i].Equals("--strip-strong-name", StringComparison.OrdinalIgnoreCase))
+            {
+                result["strip-strong-name"] = "true";
+                continue;
+            }
+            if (!args[i].StartsWith("--") || i + 1 >= args.Length || args[i + 1].StartsWith("--"))
                 throw new ArgumentException($"Expected --option value near '{args[i]}'");
             result[args[i][2..]] = args[++i];
         }

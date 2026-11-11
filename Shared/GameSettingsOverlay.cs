@@ -410,6 +410,7 @@ public sealed class GameCanvas : IDisposable
     internal static Texture2D? LastFrame { get; private set; }
     internal static Rectangle LastDestination { get; private set; }
     public static CanvasFilterMode Filter { get; set; }
+    public static float Brightness { get; set; } = 1f;
     public static string Status { get; private set; } = "not integrated";
     readonly GraphicsDevice device;
     readonly RenderTarget2D target;
@@ -434,7 +435,12 @@ public sealed class GameCanvas : IDisposable
         bool linear=Filter==CanvasFilterMode.Linear || Filter==CanvasFilterMode.GameDefault&&smooth;
         var destination=new Rectangle((previousViewport.Width-width)/2,(previousViewport.Height-height)/2,width,height);
         batch.Begin(SpriteSortMode.Deferred,BlendState.Opaque,linear?SamplerState.LinearClamp:SamplerState.PointClamp,DepthStencilState.None,RasterizerState.CullNone);
-        batch.Draw(target,destination,Color.White);batch.End();
+        float brightness=Math.Clamp(Brightness,0f,2f);
+        batch.Draw(target,destination,new Color(Math.Min(brightness,1f),Math.Min(brightness,1f),Math.Min(brightness,1f),1f));batch.End();
+        if(brightness>1f) {
+            batch.Begin(SpriteSortMode.Deferred,BlendState.Additive,linear?SamplerState.LinearClamp:SamplerState.PointClamp,DepthStencilState.None,RasterizerState.CullNone);
+            float extra=brightness-1f;batch.Draw(target,destination,new Color(extra,extra,extra,1f));batch.End();
+        }
         LastFrame=target;LastDestination=destination;
         if(Filter==CanvasFilterMode.Scanlines)
         {

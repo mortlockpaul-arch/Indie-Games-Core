@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net9.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><DefineConstants>$(DefineConstants);FNA_OVERLAY</DefineConstants></PropertyGroup>
+  <Import Project="..\Shared\OverlayArchitecture.props"/>
   <ItemGroup Condition="'$(FnaAssembly)' == ''"><ProjectReference Include="..\FNA\FNA.Core.csproj"/></ItemGroup>
   <ItemGroup Condition="'$(FnaAssembly)' != ''"><Reference Include="FNA"><HintPath>$(FnaAssembly)</HintPath></Reference></ItemGroup>
   <ItemGroup><Compile Include="..\Shared\GameSettingsOverlay.cs" Link="GameSettingsOverlay.cs"/><Compile Include="..\Shared\OverlayDiagnostics.cs" Link="OverlayDiagnostics.cs"/></ItemGroup>
