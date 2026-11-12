@@ -486,104 +486,65 @@ function Repair-SDK1047 {
     Write-Host "`nSDK1047 repair finished." -ForegroundColor Cyan
 }
 
-function Rename-DllProjects
-{
+function Rename-DllProjects {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Game,
-
-        [string]$Root = "C:\source\Indie-Games\indie-game-archive",
-
+        [string]$Root = "D:\indie-game-archive",
         [string]$MainProject = "",
-
-        [switch]$Restore
+        [switch]$Restore,
+        [switch]$TopLevelOnly
     )
 
-    $folder = if ( [IO.Path]::IsPathRooted($Game))
-    {
-        $Game
-    }
-    else
-    {
-        Join-Path $Root $Game
-    }
-
-    if (-not (Test-Path -LiteralPath $folder -PathType Container))
-    {
+    $folder = if ([IO.Path]::IsPathRooted($Game)) { $Game } else { Join-Path $Root $Game }
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
         Write-Warning "Game folder not found: $folder"
         return
     }
-
+    $folder = (Resolve-Path -LiteralPath $folder).ProviderPath
     $gameName = Split-Path $folder -Leaf
-
-    if (-not $MainProject)
-    {
-        $MainProject = "$gameName.csproj"
+    if (-not $MainProject) { $MainProject = "$gameName.csproj" }
+    elseif (-not $MainProject.EndsWith('.csproj', [StringComparison]::OrdinalIgnoreCase)) {
+        $MainProject += '.csproj'
     }
-    elseif (-not $MainProject.EndsWith(
-            ".csproj",
-            [StringComparison]::OrdinalIgnoreCase
-    ))
-    {
-        $MainProject += ".csproj"
-    }
-
     $mainPath = Join-Path $folder $MainProject
-
-    if (-not (Test-Path -LiteralPath $mainPath -PathType Leaf))
-    {
+    if (-not (Test-Path -LiteralPath $mainPath -PathType Leaf)) {
         Write-Warning "Main project not found: $mainPath"
-        Write-Warning "Skipping DLL project renaming to protect the main project."
+        Write-Warning 'No projects were renamed. Specify -MainProject if the primary project has another name.'
         return
     }
 
-    Write-Host "Main project: $MainProject" -ForegroundColor Cyan
+    $filter = if ($Restore) { '*.csproj.disabled' } else { '*.csproj' }
+    $search = @{ LiteralPath = $folder; Filter = $filter; File = $true; Force = $true }
+    if (-not $TopLevelOnly) { $search.Recurse = $true }
+    $projects = @(Get-ChildItem @search | Where-Object {
+        $relative = [IO.Path]::GetRelativePath($folder, $_.FullName)
+        $parts = $relative -split '[\\/]'
+        -not ($parts | Where-Object { $_ -in @('bin', 'obj', '.git', '.vs', 'node_modules', 'shader-repair-backups') }) -and
+        $_.FullName -ine $mainPath
+    } | Sort-Object FullName)
 
-    if ($Restore)
-    {
-        $projects = @(
-            Get-ChildItem -LiteralPath $folder `
-                -Filter "*.csproj.disabled" -File
-        )
-    }
-    else
-    {
-        $projects = @(
-        Get-ChildItem -LiteralPath $folder `
-                -Filter "*.csproj" -File |
-                Where-Object {
-                    $_.Name -ine $MainProject
-                }
-        )
-    }
-
-    foreach ($project in $projects)
-    {
-
-        if ($Restore)
-        {
-            $newName = $project.Name -replace '\.disabled$', ''
-        }
-        else
-        {
-            $newName = "$($project.Name).disabled"
-        }
-
-        $destination = Join-Path $folder $newName
-
-        if (Test-Path -LiteralPath $destination)
-        {
-            Write-Warning "Already exists: $destination"
+    $changed = 0
+    $skipped = 0
+    foreach ($project in $projects) {
+        $newName = if ($Restore) { $project.Name -replace '\.disabled$', '' }
+                   else { "$($project.Name).disabled" }
+        $destination = Join-Path $project.DirectoryName $newName
+        if (Test-Path -LiteralPath $destination) {
+            Write-Warning "Destination already exists, skipped: $destination"
+            $skipped++
             continue
         }
-
-        Rename-Item `
-            -LiteralPath $project.FullName `
-            -NewName $newName
-
-        Write-Host "Renamed: $( $project.Name ) -> $newName" `
-            -ForegroundColor Green
+        $action = if ($Restore) { 'Restore auxiliary project' } else { 'Disable auxiliary project' }
+        if ($PSCmdlet.ShouldProcess($project.FullName, "$action -> $destination")) {
+            Rename-Item -LiteralPath $project.FullName -NewName $newName -ErrorAction Stop
+            Write-Host "Renamed: $($project.FullName) -> $newName" -ForegroundColor Green
+            $changed++
+        }
     }
+    Write-Host "Auxiliary project scan: $($projects.Count) candidate(s); $changed renamed; $skipped conflicts."
+    Write-Warning 'This function only renames .csproj files; it does not delete source files or rewrite project/solution references.'
 }
 
 function Save-FormattedXml {

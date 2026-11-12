@@ -1,6 +1,4 @@
 ﻿
-. (Join-Path $PSScriptRoot 'Repair-EmbeddedResources.ps1')
-
 function Repair-XnaStorageSave {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
@@ -189,6 +187,45 @@ function Repair-XnaColors {
                 }
             )
 
+            # Convert nested Color(Vector3) + byte alpha constructor.
+            # Limit this rewrite to .Alpha members (byte 0..255); do not
+            # assume that arbitrary float alpha expressions need /255f.
+            # Example: new Color(new Color(rgbVector), sprite.Alpha)
+            #       -> new Color(new Vector4(rgbVector, sprite.Alpha / 255f))
+            $nestedColorPattern = 'new\s+Color\s*\(\s*new\s+Color\s*\(\s*(?<rgb>[^;\r\n]+?)\s*\)\s*,\s*(?<alpha>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\.Alpha)\s*\)'
+            $s = [regex]::Replace($s, $nestedColorPattern, {
+                param($match)
+                $rgb = $match.Groups['rgb'].Value.Trim()
+                $alpha = $match.Groups['alpha'].Value
+                return 'new Color(new Microsoft.Xna.Framework.Vector4(' + $rgb + ', ' + $alpha + ' / 255f))'
+            })
+
+            # Add the FNA/XNA namespace when an unqualified Color type is used.
+            # Avoid changing files that explicitly use another Color type.
+            if ($s -match '(?<![\w.])(?:new\s+Color\s*\(|\bColor\s*\.|\bColor\s+[A-Za-z_]\w*)' -and
+                $s -notmatch '(?m)^\s*(?:global\s+)?using\s+Microsoft\.Xna\.Framework\s*;' -and
+                $s -notmatch '(?m)^\s*(?:global\s+)?using\s+(?:Color\s*=|System\.Drawing\s*;|System\.Windows\.Media\s*;)' -and
+                $s -notmatch '(?m)^\s*(?:class|struct|record|enum)\s+Color\b') {
+                # Place after any leading comments, directives and using statements,
+                # but before file-scoped or block namespace declarations.
+                $lines = [regex]::Split($s, '(\r\n|\n|\r)')
+                $newline = if ($s.Contains("`r`n")) { "`r`n" } else { "`n" }
+                $matches = [regex]::Matches($s, '(?m)^\s*(?:global\s+)?using\s+(?!static\s+)[^;\r\n]+;[ \t]*(?:\r?\n|\r)?')
+                if ($matches.Count -gt 0) {
+                    $last = $matches[$matches.Count - 1]
+                    $position = $last.Index + $last.Length
+                    $s = $s.Insert($position, 'using Microsoft.Xna.Framework;' + $newline)
+                }
+                else {
+                    # Insert before the first namespace or type declaration, keeping
+                    # header comments / #nullable / #pragma directives intact.
+                    $declaration = [regex]::Match($s, '(?m)^[ \t]*(?:namespace\s+|(?:public|internal|private|protected|sealed|abstract|static|partial|file|readonly|ref|unsafe)\s+)*(?:class|struct|interface|enum|record)\b|^[ \t]*namespace\s+')
+                    if ($declaration.Success) {
+                        $s = $s.Insert($declaration.Index, 'using Microsoft.Xna.Framework;' + $newline + $newline)
+                    }
+                }
+            }
+
             return $s
         }
 }
@@ -271,26 +308,90 @@ function Repair-XnaResolveTexture2D {
 function Repair-XnaStorageLoad {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
+
     Invoke-XnaSourceFix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference -Transform {
         param($s)
-        # Preserve File.Open/Create migrations as well as constructor-based migrations.
-        # Rewrite only a declaration followed immediately by a known read operation.
+
+        # Existing simple migration: path declaration immediately followed by File.Open.
         $pattern = '(?m)^[ \t]*(?:string|var)\s+(?<path>\w+)\s*=\s*Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<filename>[^;\r\n]+?)\s*\);[ \t]*\r?\n(?<indent>[ \t]*)(?<prefix>(?:(?:using\s+)?(?:FileStream|Stream)\s+\w+\s*=\s*|\w+\s*=\s*))File\.Open\(\s*\k<path>\s*,\s*FileMode\.Open\s*\)'
         $s = [regex]::Replace($s, $pattern, {
             param($m)
-            return $m.Groups['indent'].Value + ([regex]::Replace($m.Groups['prefix'].Value, '\bFileStream\b', 'Stream')) + $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['filename'].Value.Trim() + ', FileMode.Open)'
+            return $m.Groups['indent'].Value +
+                ([regex]::Replace($m.Groups['prefix'].Value, '\bFileStream\b', 'Stream')) +
+                $m.Groups['container'].Value + '.OpenFile(' +
+                $m.Groups['filename'].Value.Trim() + ', FileMode.Open)'
         })
 
-        # Supports an if (!File.Exists(path)) { return; } between declaration
-        # and stream creation, as used by The Impossible Game.
+        # Existing guarded migration: if (!File.Exists(path)) { return; }
         $pattern = '(?ms)^(?<indent>[ \t]*)(?:string|var)\s+(?<path>\w+)\s*=\s*Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<file>"[^"\r\n]+")\s*\);[ \t]*\r?\n(?<guard>[ \t]*if\s*\(\s*!File\.Exists\(\s*\k<path>\s*\)\s*\)\s*\{\s*return\s*;\s*\}\s*)(?<open>[ \t]*using\s+FileStream\s+\w+\s*=\s*new\s+FileStream\(\s*\k<path>\s*,\s*FileMode\.Open\s*\);)'
-        [regex]::Replace($s, $pattern, {
+        $s = [regex]::Replace($s, $pattern, {
             param($m)
-            $guard = [regex]::Replace($m.Groups['guard'].Value, 'File\.Exists\(\s*' + [regex]::Escape($m.Groups['path'].Value) + '\s*\)', $m.Groups['container'].Value + '.FileExists(' + $m.Groups['file'].Value + ')')
+            $guard = [regex]::Replace(
+                $m.Groups['guard'].Value,
+                'File\.Exists\(\s*' + [regex]::Escape($m.Groups['path'].Value) + '\s*\)',
+                $m.Groups['container'].Value + '.FileExists(' + $m.Groups['file'].Value + ')')
             $open = $m.Groups['open'].Value.Replace('FileStream', 'Stream')
-            $open = [regex]::Replace($open, 'new\s+Stream\([^;]+\)', $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['file'].Value + ', FileMode.Open)')
+            $open = [regex]::Replace(
+                $open, 'new\s+Stream\([^;]+\)',
+                $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['file'].Value + ', FileMode.Open)')
             return $m.Groups['indent'].Value + $guard + $open
         })
+
+        # Decompiled XNA pattern (This Is Hard):
+        # string path2 = Path.Combine(container.Path, "SaveData.sav");
+        # m_bCanSave = true;
+        # if (File.Exists(path2)) {
+        #     FileStream stream = File.Open(path2, FileMode.Open);
+        # }
+        # Only rewrite if the path identifier occurs exactly in the declaration,
+        # existence check, and read operation. Other uses are left untouched.
+        $declaration = '(?m)^(?<indent>[ \t]*)(?:string|var)\s+(?<path>[A-Za-z_]\w*)\s*=\s*Path\.Combine\(\s*(?<container>[A-Za-z_]\w*)\.Path\s*,\s*(?<file>"[^"\r\n]+")\s*\);[ \t]*(?<newline>\r?\n)'
+        $matches = [regex]::Matches($s, $declaration)
+        for ($i = $matches.Count - 1; $i -ge 0; $i--) {
+            $m = $matches[$i]
+            $pathName = $m.Groups['path'].Value
+            $container = $m.Groups['container'].Value
+            $filename = $m.Groups['file'].Value
+            $identifier = '(?<![\w@])' + [regex]::Escape($pathName) + '(?!\w)'
+
+            # Avoid changing code when path2 is also used for anything else.
+            if ([regex]::Matches($s, $identifier).Count -ne 3) { continue }
+
+            $tail = $s.Substring($m.Index + $m.Length)
+            $existsPattern = 'File\.Exists\s*\(\s*' + [regex]::Escape($pathName) + '\s*\)'
+            $openPattern = '(?<type>\bFileStream\b|\bStream\b)(?<between>\s+[A-Za-z_]\w*\s*=\s*)File\.Open\s*\(\s*' +
+                [regex]::Escape($pathName) + '\s*,\s*FileMode\.Open\s*\)'
+
+            $exists = [regex]::Match($tail, $existsPattern)
+            $open = [regex]::Match($tail, $openPattern)
+            if (-not $exists.Success -or -not $open.Success) { continue }
+            if ($exists.Index -ge $open.Index) { continue }
+
+            # Limit changes to nearby statements; don't cross another declaration.
+            if ($open.Index -gt 1200) { continue }
+            $segment = $tail.Substring(0, $open.Index + $open.Length)
+            if ($segment -match '(?m)^[ \t]*(?:string|var)\s+' + [regex]::Escape($pathName) + '\s*=') { continue }
+
+            $segment = [regex]::Replace(
+                $segment, $existsPattern,
+                [System.Text.RegularExpressions.MatchEvaluator]{
+                    param($unused)
+                    return $container + '.FileExists(' + $filename + ')'
+                })
+            $segment = [regex]::Replace(
+                $segment, $openPattern,
+                [System.Text.RegularExpressions.MatchEvaluator]{
+                    param($streamMatch)
+                    return 'Stream' + $streamMatch.Groups['between'].Value +
+                        $container + '.OpenFile(' + $filename + ', FileMode.Open)'
+                })
+
+            $s = $s.Substring(0, $m.Index) +
+                $segment +
+                $s.Substring($m.Index + $m.Length + $open.Index + $open.Length)
+        }
+
+        return $s
     }
 }
 
@@ -359,7 +460,7 @@ function Repair-XnaCompatibility {
     param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
     foreach ($fix in @('Repair-XnaStorageSelector','Repair-XnaOpenContainer','Repair-XnaStorageSave',
                        'Repair-XnaStorageLoad','Repair-XnaStoragePaths','Repair-XnaFileStream','Repair-XnaColors','Repair-XnaResolveTexture2D','Repair-XnaSpriteBatch',"Repair-XnaBloomComponent",
-                       'Repair-XnaSignedInGamerAvatar','Repair-EmbeddedResources')) {
+                       'Repair-XnaSignedInGamerAvatar')) {
         Write-Host "Running $fix" -ForegroundColor Cyan
         & $fix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference
     }
@@ -845,3 +946,4 @@ function Get-Dll-References
 #    -Execute -InitializeGit
 #
 #.\Update-IndieGamesCoreSolution.ps1 -Execute
+

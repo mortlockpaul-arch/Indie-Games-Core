@@ -19,6 +19,12 @@ public sealed record ProjectCleanupPlan(string Root, string Fingerprint, IReadOn
 
 public static class ArchiveProjectCleanup
 {
+    // Never recurse into generated outputs, extracted packages or VCS metadata.
+    private static readonly HashSet<string> SkipFolders = new(StringComparer.OrdinalIgnoreCase)
+    { "bin", "obj", ".git", ".vs", ".idea", "node_modules", "packages", "XnaRedirect-Test", "XnaRedirect-Patched" };
+    private static bool SkipFolder(string name) => SkipFolders.Contains(name) ||
+        name.StartsWith("584E", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("Content", StringComparison.OrdinalIgnoreCase);
     private static string Full(string path) => System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path));
     private static void Check(string root, string path)
     {
@@ -53,11 +59,24 @@ public static class ArchiveProjectCleanup
                 token.ThrowIfCancellationRequested();
                 var attributes = File.GetAttributes(entry);
                 if ((attributes & FileAttributes.ReparsePoint) != 0) { Add("Keep", entry, "Linked path excluded"); continue; }
-                if ((attributes & FileAttributes.Directory) != 0) Walk(entry);
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    if (!SkipFolder(System.IO.Path.GetFileName(entry))) Walk(entry);
+                }
                 else if (System.IO.Path.GetExtension(entry).Equals(".csproj", StringComparison.OrdinalIgnoreCase) || System.IO.Path.GetExtension(entry).Equals(".bak", StringComparison.OrdinalIgnoreCase))
                 {
-                    using var stream = File.OpenRead(entry);
-                    files.Add(entry, Convert.ToHexString(SHA256.HashData(stream)));
+                    // Project content matters for reference safety; backups only need stable metadata
+                    // until the per-file validation immediately before deletion.
+                    if (entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var stream = File.OpenRead(entry);
+                        files.Add(entry, Convert.ToHexString(SHA256.HashData(stream)));
+                    }
+                    else
+                    {
+                        var info = new FileInfo(entry);
+                        files.Add(entry, $"{info.Length}:{info.LastWriteTimeUtc.Ticks}");
+                    }
                 }
             }
         }
@@ -102,12 +121,15 @@ public static class ArchiveProjectCleanup
             {
                 if (project.Equals(canonical, StringComparison.OrdinalIgnoreCase)) continue;
                 if (problem != null) { Add("Keep", project, "Main project needs review"); continue; }
-                if (uncertain) { Add("Keep", project, "Dynamic project references require manual review"); continue; }
+                if (uncertain) { Add("Review", project, "Dynamic project references require manual review"); continue; }
+                // An unreferenced project may still be a separate executable, tool or library.
+                // Only the operator can establish that it is redundant.
+                if (!project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)) continue;
                 if (references.Contains(project)) { Add("Keep", project, "Referenced by an active project"); continue; }
                 string destination = project + ".disabled";
                 bool collision = File.Exists(destination);
                 if (collision) destination = project + ".cleanup-" + Guid.NewGuid().ToString("N") + ".disabled";
-                Add("Disable", project, collision ? "Unreferenced duplicate; preserve existing disabled copy" : "Unreferenced project; folder-named executable exists", destination);
+                Add("Review", project, collision ? "Unreferenced project; existing disabled copy found; verify manually" : "Unreferenced project; verify it is redundant before disabling", destination);
             }
         }
         foreach (string project in projects.Where(p => System.IO.Path.GetDirectoryName(p)!.Equals(root, StringComparison.OrdinalIgnoreCase)))
@@ -135,7 +157,13 @@ public static class ArchiveProjectCleanup
                     if (!row.Destination.StartsWith(row.Path + ".", StringComparison.OrdinalIgnoreCase) || !row.Destination.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) || System.IO.Path.GetDirectoryName(row.Destination) != System.IO.Path.GetDirectoryName(row.Path)) throw new IOException("Invalid disabled destination.");
                     File.Move(row.Path, row.Destination); // Never overwrite an existing disabled copy.
                 }
-                else File.Delete(row.Path);
+                else
+                {
+                    // The initial scan used metadata for speed. Recheck immediately before deletion.
+                    var info = new FileInfo(row.Path);
+                    if (!info.Exists) throw new IOException("Backup no longer exists.");
+                    File.Delete(row.Path);
+                }
                 row.Status = "Applied";
             }
             catch (Exception e) { row.Status = "Failed: " + e.Message; }

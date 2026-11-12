@@ -28,7 +28,7 @@ public sealed class RepairCenterWindow : Window
 
     public RepairCenterWindow(IReadOnlyList<string> games)
     {
-        Title = "Repair Center"; Width = 900; Height = 650; MinWidth = 720; MinHeight = 480;
+        Title = "Repair Center"; Width = 1050; Height = 620; MinWidth = 780; MinHeight = 440;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Brush("#0B1020"); Foreground = Brush("#E6EDF8");
         FontFamily = new FontFamily("Segoe UI"); FontSize = 13;
@@ -50,35 +50,35 @@ public sealed class RepairCenterWindow : Window
               </ControlTemplate.Triggers>
             </ControlTemplate>
             """)));
-        var shell = new Grid { Margin = new Thickness(14, 12, 14, 12) };
+        var shell = new Grid { Margin = new Thickness(12, 9, 12, 9) };
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Content = shell;
-        var header = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 6) };
         header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         shell.Children.Add(header);
         var heading = new StackPanel(); header.Children.Add(heading);
-        heading.Children.Add(new TextBlock { Text = "Repair Center", FontSize = 21, FontWeight = FontWeights.SemiBold });
-        heading.Children.Add(new TextBlock { Text = $"{games.Count} game{(games.Count == 1 ? "" : "s")} selected", Foreground = Brush("#A4B4CF"), Margin = new Thickness(1, 6, 0, 0), ToolTip = string.Join("\n", games) });
+        heading.Children.Add(new TextBlock { Text = "Repair Center", FontSize = 18, FontWeight = FontWeights.SemiBold });
+        heading.Children.Add(new TextBlock { Text = $"{games.Count} game{(games.Count == 1 ? "" : "s")} selected", Foreground = Brush("#A4B4CF"), Margin = new Thickness(1, 2, 0, 0), ToolTip = string.Join("\n", games) });
         var body = new Grid(); Grid.SetRow(body, 1); shell.Children.Add(body);
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(156) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(136) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var navigation = new StackPanel { Margin = new Thickness(0, 0, 18, 0) }; body.Children.Add(navigation);
-        navigation.Children.Add(new TextBlock { Text = "REPAIR LIBRARY", Foreground = Brush("#7285A4"), FontSize = 10, Margin = new Thickness(6, 0, 0, 12) });
+        var navigation = new StackPanel { Margin = new Thickness(0, 0, 10, 0) }; body.Children.Add(navigation);
+        navigation.Children.Add(new TextBlock { Text = "REPAIR LIBRARY", Foreground = Brush("#7285A4"), FontSize = 10, Margin = new Thickness(6, 0, 0, 6) });
         foreach (string category in new[] { "All Repairs", "Diagnostics", "Source APIs", "Rendering", "Project & SDK" }) {
-            var tab = new Button { Content = category, HorizontalContentAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 7), BorderThickness = new Thickness(0), Padding = new Thickness(10, 8, 8, 8) };
+            var tab = new Button { Content = category, HorizontalContentAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 3), BorderThickness = new Thickness(0), Padding = new Thickness(9, 5, 7, 5) };
             tab.Click += (_, _) => { _category = category; Filter(); };
             navigation.Children.Add(tab); _tabs[category] = tab;
         }
         var content = new DockPanel(); Grid.SetColumn(content, 1); body.Children.Add(content);
-        var tools = new StackPanel { Margin = new Thickness(0, 0, 0, 8) }; DockPanel.SetDock(tools, Dock.Top); content.Children.Add(tools);
-        tools.Children.Add(new TextBlock { Text = "Find a repair", Foreground = Brush("#A4B4CF"), Margin = new Thickness(0, 0, 0, 6) });
-        _search.Background = Brush("#141E32"); _search.Foreground = Foreground; _search.BorderBrush = Brush("#34445F"); _search.Padding = new Thickness(10, 6, 10, 6);
+        var tools = new StackPanel { Margin = new Thickness(0, 0, 0, 5) }; DockPanel.SetDock(tools, Dock.Top); content.Children.Add(tools);
+        tools.Children.Add(new TextBlock { Text = "Find a repair or function", Foreground = Brush("#A4B4CF"), Margin = new Thickness(0, 0, 0, 3) });
+        _search.Background = Brush("#141E32"); _search.Foreground = Foreground; _search.BorderBrush = Brush("#34445F"); _search.Padding = new Thickness(8, 4, 8, 4);
         _search.ToolTip = "Search titles, descriptions, warning codes, or categories"; _search.TextChanged += (_, _) => Filter(); tools.Children.Add(_search);
-        var presets = new WrapPanel { Margin = new Thickness(0, 7, 0, 0) }; tools.Children.Add(presets);
+        var presets = new WrapPanel { Margin = new Thickness(0, 5, 0, 0) }; tools.Children.Add(presets);
         void Preset(string label, Func<Choice, bool> select) {
-            var button = new Button { Content = label, ToolTip = "Replace the current selection with " + label.ToLowerInvariant() + " repairs. Use Preview selected to review before applying.", Padding = new Thickness(11, 6, 11, 6), FontSize = 12 };
+            var button = new Button { Content = label, ToolTip = "Replace the current selection with " + label.ToLowerInvariant() + " repairs. Use Preview selected to review before applying.", Padding = new Thickness(8, 4, 8, 4), FontSize = 12 };
             button.Click += (_, _) => { foreach (var pair in _checks) pair.Value.IsChecked = select(pair.Key); RefreshSelection(); };
             presets.Children.Add(button);
         }
@@ -93,36 +93,47 @@ public sealed class RepairCenterWindow : Window
         DockPanel.SetDock(advanced, Dock.Bottom); content.Children.Add(advanced);
         var scroll = new ScrollViewer { Content = _repairRows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         content.Children.Add(scroll);
-        foreach (var choice in Choices()) {
-            var text = new StackPanel { Margin = new Thickness(7, 0, 0, 0) };
-            var headingRow = new WrapPanel();
-            headingRow.Children.Add(new TextBlock { Text = choice.Title, FontWeight = FontWeights.SemiBold, Foreground = Foreground });
-            headingRow.Children.Add(new TextBlock {
-                Text = choice.Category, FontSize = 11, Foreground = Brush("#A89CF6"),
-                Margin = new Thickness(9, 1, 0, 0)
-            });
-            text.Children.Add(headingRow);
-            text.Children.Add(new TextBlock {
-                Text = choice.Description, FontSize = 12, Foreground = Brush("#B8C6DC"),
-                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0)
-            });
+        // Compact column headings make the actual repair IDs visible alongside friendly names.
+        var columnHeader = new Grid { Margin = new Thickness(0, 0, 6, 4) };
+        columnHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(265) });
+        columnHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var repairColumn = new TextBlock { Text = "REPAIR", FontSize = 10, Foreground = Brush("#8196B5") };
+        Grid.SetColumn(repairColumn, 0); columnHeader.Children.Add(repairColumn);
+        var functionColumn = new TextBlock { Text = "REPAIR ID / FUNCTION", FontSize = 10, Foreground = Brush("#8196B5") };
+        Grid.SetColumn(functionColumn, 1); columnHeader.Children.Add(functionColumn);
+        tools.Children.Add(columnHeader);
 
+        foreach (var choice in Choices()) {
+            var cells = new Grid { MinHeight = 34 };
+            cells.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(245) });
+            cells.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var title = new TextBlock {
+                Text = choice.Title, FontWeight = FontWeights.SemiBold, Foreground = Foreground,
+                TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = choice.Description
+            };
+            cells.Children.Add(title);
+            var id = new TextBlock {
+                Text = choice.Id, FontSize = 12, Foreground = Brush("#A89CF6"),
+                TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = choice.Id + "\n" + choice.Description
+            };
+            Grid.SetColumn(id, 1); cells.Children.Add(id);
             var check = new CheckBox {
-                Content = text, Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch
+                Content = cells, Foreground = Foreground, VerticalContentAlignment = VerticalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                ToolTip = choice.Description
             };
             System.Windows.Automation.AutomationProperties.SetName(check, choice.Title);
-            System.Windows.Automation.AutomationProperties.SetHelpText(check, choice.Description);
+            System.Windows.Automation.AutomationProperties.SetHelpText(check, choice.Id + ". " + choice.Description);
             var row = new Border {
                 Child = check, Tag = choice, Background = Brush("#141E32"), BorderBrush = Brush("#263650"),
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(8, 5, 8, 5), Margin = new Thickness(0, 0, 4, 3)
+                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(7, 2, 7, 2), Margin = new Thickness(0, 0, 4, 2)
             };
             _checks[choice] = check;
             _repairRows.Children.Add(row);
-
-            void Changed()
-            {
+            void Changed() {
                 bool selected = check.IsChecked == true;
                 row.BorderBrush = Brush(selected ? "#56C8B6" : "#263650");
                 row.Background = Brush(selected ? "#142D35" : "#141E32");
@@ -158,7 +169,7 @@ public sealed class RepairCenterWindow : Window
     void RefreshSelection() { int count = _checks.Count(p => p.Value.IsChecked == true); _selection.Text = count == 0 ? "Choose your repairs" : $"{count} repair{(count == 1 ? "" : "s")} selected"; _selection.ToolTip = string.Join("\n", _checks.Where(p => p.Value.IsChecked == true).Select(p => p.Key.Title)); _preview.IsEnabled = _apply.IsEnabled = count > 0; }
     void Filter() {
         string query = _search.Text.Trim();
-        foreach (Border row in _repairRows.Children) { var c = (Choice)row.Tag; row.Visibility = (_category == "All Repairs" || c.Category == _category) && (query.Length == 0 || (c.Title + " " + c.Description + " " + c.Category).Contains(query, StringComparison.OrdinalIgnoreCase)) ? Visibility.Visible : Visibility.Collapsed; }
+        foreach (Border row in _repairRows.Children) { var c = (Choice)row.Tag; row.Visibility = (_category == "All Repairs" || c.Category == _category) && (query.Length == 0 || (c.Title + " " + c.Description + " " + c.Category + " " + c.Id).Contains(query, StringComparison.OrdinalIgnoreCase)) ? Visibility.Visible : Visibility.Collapsed; }
         foreach (var tab in _tabs) tab.Value.Background = Brush(tab.Key == _category ? "#263A54" : "#111A2C");
     }
 
@@ -171,8 +182,7 @@ public sealed class RepairCenterWindow : Window
         new Choice("Repair-CronBloom", "Scene Capture", "Targeted back-buffer repairs for CRON, Avatar Insane Race 3D, and Jet Pack War. Python 3.10+.", "Rendering"),
         new Choice("Repair-XnaStorageSelector", "Storage Selector", "Convert legacy device-selector calls to the supported storage API.", "Source APIs"),
         new Choice("Repair-XnaOpenContainer", "Open Storage", "Adapt older save-container opening calls.", "Source APIs"),
-        new Choice("Repair-XnaStorageSave", "Save Games", "Migrate supported container-based file creation patterns.", "Source APIs"),
-        new Choice("Repair-XnaStorageLoad", "Load Games", "Migrate supported save-file reading patterns.", "Source APIs"),
+        new Choice("Repair-XnaStorage", "Save / Load Storage", "Combine save-file creation, loading, and StorageContainer.Path fixes. Runs Save, Load, then Paths.", "Source APIs"),
         new Choice("Repair-XnaFileStream", "File Access", "Use supported stream APIs for known legacy file-access patterns.", "Source APIs"),
         new Choice("Repair-XnaSignedInGamerAvatar", "Gamer Avatars", "Update legacy signed-in gamer avatar API calls.", "Source APIs"),
         new Choice("Repair-EmbeddedResources", "Missing Strings", "Repair embedded string resources without replacing existing translations.", "Source APIs", Recommended: true),

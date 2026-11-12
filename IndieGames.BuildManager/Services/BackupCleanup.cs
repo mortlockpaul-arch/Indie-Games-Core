@@ -20,23 +20,32 @@ public static class BackupCleanup
         void Walk(string current){token.ThrowIfCancellationRequested();Validate(root,current);var info=new FileInfo(current);if(!System.IO.Directory.Exists(current)){bytes+=info.Length;files++;metadata.Append(current).Append('|').Append(info.Length).Append('|').Append(info.LastWriteTimeUtc.Ticks).AppendLine();return;}metadata.Append(current).AppendLine();foreach(string child in System.IO.Directory.EnumerateFileSystemEntries(current).Order(StringComparer.OrdinalIgnoreCase))Walk(child);}
         Walk(path);return new(root,path,directory,bytes,files,Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(metadata.ToString()))));
     }
+    static void ValidateRoot(string root)
+    {
+        for(string? p=root;p!=null;p=System.IO.Path.GetDirectoryName(p))
+            if((File.GetAttributes(p)&FileAttributes.ReparsePoint)!=0)
+                throw new IOException("Backup cleanup refuses linked archive paths.");
+    }
     public static IReadOnlyList<BackupCleanupEntry> Preview(string root,CancellationToken token=default)
     {
         root=Full(root);if(root==System.IO.Path.GetPathRoot(root))throw new IOException("Choose a dedicated source archive, not a drive root.");
+        if(!System.IO.Directory.Exists(root))throw new DirectoryNotFoundException(root);
+        ValidateRoot(root);
         var result=new List<BackupCleanupEntry>();
         void Walk(string folder){token.ThrowIfCancellationRequested();if((File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0)return;
             foreach(var file in System.IO.Directory.EnumerateFiles(folder))if(BackupFile(System.IO.Path.GetFileName(file)) && (File.GetAttributes(file)&FileAttributes.ReparsePoint)==0)result.Add(Inspect(root,file,false,token));
+            bool project=System.IO.Directory.EnumerateFiles(folder,"*.csproj").Any();
             foreach(var child in System.IO.Directory.EnumerateDirectories(folder)){
                 token.ThrowIfCancellationRequested();if((File.GetAttributes(child)&FileAttributes.ReparsePoint)!=0)continue;string name=System.IO.Path.GetFileName(child);
-                bool project=System.IO.Directory.EnumerateFiles(folder,"*.csproj").Any();
                 if(KnownFolders.Contains(name)||project&&(name.Equals("backup",StringComparison.OrdinalIgnoreCase)||name.Equals("backups",StringComparison.OrdinalIgnoreCase)))result.Add(Inspect(root,child,true,token));
-                else if(name is not ("bin" or "obj" or ".git" or ".vs")&&!name.StartsWith("584E",StringComparison.OrdinalIgnoreCase))Walk(child);
+                else if(!new[]{"bin","obj",".git",".vs",".idea","node_modules","XnaRedirect-Test","XnaRedirect-Patched","Content"}.Contains(name,StringComparer.OrdinalIgnoreCase)&&!name.StartsWith("584E",StringComparison.OrdinalIgnoreCase))Walk(child);
             }
         }
         Walk(root);return result;
     }
     public static void Delete(BackupCleanupEntry entry, Action<long>? fileDeleted = null)
     {
+        ValidateRoot(Full(entry.Root));
         Validate(entry.Root,entry.Path);
         if(!BackupFile(System.IO.Path.GetFileName(entry.Path))&&!KnownFolders.Contains(System.IO.Path.GetFileName(entry.Path))&&!(entry.Directory&&new[]{"backup","backups"}.Contains(System.IO.Path.GetFileName(entry.Path),StringComparer.OrdinalIgnoreCase)))throw new IOException("Not a recognized backup.");
         var current=Inspect(entry.Root,entry.Path,entry.Directory,CancellationToken.None);

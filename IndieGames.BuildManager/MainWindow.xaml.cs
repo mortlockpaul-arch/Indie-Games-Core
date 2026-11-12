@@ -1,4 +1,4 @@
-using IndieGames.BuildManager.Models;
+﻿using IndieGames.BuildManager.Models;
 using IndieGames.BuildManager.Services;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
@@ -1276,8 +1276,15 @@ public static void ScanXnaReferences(string folder)
                     string.Concat(additionalScripts.Select(entry => ". " + quote(entry.Script) + "; ")) +
                     "foreach($fix in @(" + string.Join(",", selectedFixers.Select(quote)) + ")) { " +
                     "if(-not (Get-Command $fix -CommandType Function -ErrorAction SilentlyContinue)) { throw \"Missing fixer: $fix\" }; " +
-                    "& $fix -Root " + quote(game.Folder) + (whatIf ? " -WhatIf" : "") +
-                    " -ErrorAction Stop; if(-not $?) { throw \"Fixer failed: $fix\" } } }; ";
+                    "$repairParams = @{ Root = " + quote(game.Folder) + "; ErrorAction = 'Stop' }; " +
+                    (whatIf ? "$repairParams.WhatIf = $true; " : "") +
+                    "Write-Host ('[REPAIR] Function: ' + $fix); " +
+                    "foreach($key in @('Root','WhatIf','NoBackup','ErrorAction')) { " +
+                    "if($repairParams.ContainsKey($key)) { Write-Host ('[PARAM] ' + $key + ' = ' + $repairParams[$key]) } }; " +
+                    "Write-Host ('[REPAIR] Script: ' + (Get-Command $fix).ScriptBlock.File); " +
+                    "try { & $fix @repairParams; if(-not $?) { throw ('Fixer failed: ' + $fix) }; " +
+                    "Write-Host ('[SUCCESS] ' + $fix) } catch { Write-Host ('[FAILED] ' + $fix + ': ' + $_.Exception.Message); throw } " +
+                    "} }; ";
                 if (selectedSdkFixers.Length > 0) {
                     if (whatIf) {
                         commands += "Write-Host 'PREVIEW: SDK fixes are listed but NOT executed (they do not support -WhatIf).'; " +
@@ -1288,7 +1295,7 @@ public static void ScanXnaReferences(string folder)
                             "$framework=" + quote(sdkFramework) + "; " +
                             "$platform=" + quote(sdkPlatform) + "; ";
                         foreach (string fix in selectedSdkFixers) {
-                            commands += fix switch {
+                            string sdkCommand = fix switch {
                                 "Repair-NetSdk1005" =>
                                     "Repair-NetSdk1005 -Root " + quote(archive) +
                                     " -ProjectName " + quote(game.Name) + " -Framework $framework; ",
@@ -1308,7 +1315,11 @@ public static void ScanXnaReferences(string folder)
                                 "Format-XbligProjects" => "Format-XbligProjects -Game $game; ",
                                 _ => ""
                             };
-                            commands += "if(-not $?) { throw 'SDK fixer failed' }; ";
+                            if (sdkCommand.Length == 0) continue;
+                            commands += "Write-Host " + quote("[SDK REPAIR] Function: " + fix) + "; " +
+                                "Write-Host " + quote("[SDK REPAIR] Command: " + sdkCommand.Trim()) + "; " +
+                                sdkCommand + "if(-not $?) { throw " + quote("SDK fixer failed: " + fix) + " }; " +
+                                "Write-Host " + quote("[SUCCESS] " + fix) + "; ";
                         }
                     }
                 }
@@ -1324,6 +1335,7 @@ public static void ScanXnaReferences(string folder)
                         if (repairXna3) arguments.Add("--convert-xna3");
                         if (repairCronBloom) arguments.Add("--cron-bloom");
                         if (whatIf) arguments.Add("--preview");
+                        Log($"[REPAIR] Python: {string.Join(", ", arguments.Skip(4))}; Root = {game.Folder}; Preview = {whatIf}");
                         exit = await ProcessRunner.RunAsync("py.exe", arguments, game.Folder, Log, token);
                     }
                     if (exit == 0 && (selectedFixers.Length > 0 || selectedSdkFixers.Length > 0)) {
@@ -1527,6 +1539,74 @@ public static void ScanXnaReferences(string folder)
     }
 
 
+    private async void RecoverShaders_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string decompiler = ShaderDecompilerBox.Text.Trim();
+        if (!File.Exists(decompiler)) { Log("Decompiler project missing: " + decompiler); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        bool recurse = ShaderRecoveryRecurseBox.IsChecked == true;
+        bool overwrite = ShaderRecoveryOverwriteBox.IsChecked == true;
+        if (overwrite && MessageBox.Show(this,
+            "Replace previously recovered HLSL and compiled review outputs? Original game XNBs will not be changed.",
+            "Confirm shader recovery overwrite", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        await ExecuteAsync(async token =>
+        {
+            foreach (string folder in folders)
+            {
+                token.ThrowIfCancellationRequested();
+                Log("=== Recovering shader source: " + Path.GetFileName(folder) + " ===");
+                try { await ShaderRecovery.RunAsync(folder, decompiler, recurse, overwrite, Log, token); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Log("Shader recovery failed: " + ex.Message); }
+            }
+        });
+    }
+
+    private async void PackageRecoveredShaders_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = Selected();
+        if (selected.Count == 0) { Log("Select one or more game rows first."); return; }
+        string archive = Path.GetFullPath(RootBox.Text.Trim());
+        string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
+        var folders = selected.Select(p => Path.GetFullPath(p.Path))
+            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(archive, Path.GetRelativePath(archive, path)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                : Path.GetDirectoryName(path)!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        bool deploy = ShaderDeployBox.IsChecked == true;
+        if (deploy && MessageBox.Show(this,
+            "Replace game Content XNBs with compiled recovered effects? Original assets will be backed up. " +
+            "Compilation does not guarantee correct visuals. Test your game after deployment.",
+            "Confirm recovered shader deployment", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        await ExecuteAsync(async token =>
+        {
+            foreach (string folder in folders)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    Log("=== Packaging recovered shaders: " + Path.GetFileName(folder) + " ===");
+                    var candidates = await Task.Run(() => ShaderDeployment.Prepare(folder, Log, token), token);
+                    if (!deploy) { Log($"Packaged {candidates.Count} effect(s) for review; no game files changed."); continue; }
+                    var summary = await Task.Run(() => ShaderDeployment.Deploy(folder, candidates, Log, token), token);
+                    Log($"Deployment: {summary.Deployed} installed, {summary.Skipped} skipped. Rebuild and test the game.");
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { Log("Shader packaging/deployment failed: " + ex.Message); }
+            }
+        });
+    }
+
     private async void ConvertXnbEffects_Click(object sender, RoutedEventArgs e)
     {
         var selected = Selected();
@@ -1606,4 +1686,43 @@ public static void ScanXnaReferences(string folder)
             Log($"Fixer exit code: {code}");
         });
     }
+}
+
+
+// Display-only conversion: preserve the original MSBuild property on GameProject.
+public sealed class RuntimeIdentifierDisplayConverter : System.Windows.Data.IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter,
+        System.Globalization.CultureInfo culture)
+    {
+        string runtime = values.Length > 0 ? values[0] as string ?? "" : "";
+        string platform = values.Length > 1 ? values[1] as string ?? "" : "";
+        runtime = runtime.Trim();
+        platform = platform.Trim();
+        if (!runtime.Contains("$(", StringComparison.Ordinal))
+            return runtime;
+
+        string architecture = platform.ToLowerInvariant() switch
+        {
+            "x86" => "x86",
+            "x64" => "x64",
+            "arm64" => "arm64",
+            _ => ""
+        };
+        if (architecture.Length == 0)
+            return "Not resolved (" + runtime + ")";
+
+        // Expand only the known architecture placeholders. Other MSBuild properties
+        // need full MSBuild evaluation and must not be presented as resolved.
+        string resolved = System.Text.RegularExpressions.Regex.Replace(runtime,
+            @"\$\((PlatformTarget|Platform)\)", architecture,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return resolved.Contains("$(", StringComparison.Ordinal)
+            ? "Not resolved (" + runtime + ")"
+            : resolved;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter,
+        System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
 }

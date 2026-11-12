@@ -75,8 +75,19 @@ try
         if (r.Read7BitEncodedInt() != 0)
             throw new InvalidDataException("Shared resources are unsupported");
         int index = r.Read7BitEncodedInt();
-        if (index < 1 || index > count || !readers[index - 1].Contains(".EffectReader,"))
-            throw new InvalidDataException("Not an effect XNB: " + string.Join("; ", readers));
+        if (index < 1 || index > count)
+            throw new InvalidDataException("Invalid effect reader index");
+
+        string readerName = readers[index - 1];
+
+        if (readerName != "Microsoft.Xna.Framework.Content.EffectReader" &&
+            !readerName.StartsWith(
+                "Microsoft.Xna.Framework.Content.EffectReader,",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "Not an effect XNB: " + string.Join("; ", readers));
+        }
         int length = r.ReadInt32();
         if (length < 0 || length > payload.Length - r.BaseStream.Position)
             throw new InvalidDataException("Invalid effect length");

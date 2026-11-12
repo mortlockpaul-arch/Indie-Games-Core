@@ -1,3 +1,4 @@
+using SynapseGaming.LightingSystem.Core;
 using System;
 using SynapseGaming.LightingSystem.Serialization;
 

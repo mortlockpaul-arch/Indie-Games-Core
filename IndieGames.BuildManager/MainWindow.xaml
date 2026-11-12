@@ -1,4 +1,4 @@
-<Window x:Class="IndieGames.BuildManager.MainWindow"
+﻿<Window x:Class="IndieGames.BuildManager.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:services="clr-namespace:IndieGames.BuildManager.Services"
@@ -7,7 +7,7 @@
  WindowStyle="SingleBorderWindow" ResizeMode="CanResize" Icon="/IndieGames.BuildManager;component/DashboardIcon.ico"
  Background="#111827" Foreground="#E5E7EB">
  <Window.Resources>
-  <ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Themes/ManagerTheme.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary>
+  <ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Themes/ManagerTheme.xaml"/></ResourceDictionary.MergedDictionaries><local:RuntimeIdentifierDisplayConverter x:Key="RuntimeIdentifierDisplay"/></ResourceDictionary>
  </Window.Resources>
  <DockPanel Margin="16">
    <StackPanel DockPanel.Dock="Top">
@@ -20,7 +20,7 @@
      <WrapPanel Margin="2,0,2,6">
        <Button x:Name="CancelScanButton" Style="{StaticResource ToolbarButton}" Content="Cancel Scan" Click="CancelScan_Click" IsEnabled="False"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Storage…" Click="Storage_Click" ToolTip="Storage folders and build cache cleanup"/>
-       <Button Style="{StaticResource ToolbarButton}" Content="Cleanup…" Click="ProjectCleanup_Click" ToolTip="Review redundant archive projects and backup files"/>
+       <Button Style="{StaticResource ToolbarButton}" Content="Archive Maintenance…" Click="ProjectCleanup_Click" ToolTip="Scan and maintain archive projects, backups, and cleanup reports"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Share Source…" Click="ShareSource_Click" Background="#2563EB" ToolTip="Share the selected game's source files"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Share Game…" Click="ShareGame_Click" Background="#2563EB" ToolTip="Share the selected game's built Windows output"/>
        <Button Style="{StaticResource ToolbarButton}" Content="Share Both…" Click="ShareBoth_Click"/>
@@ -98,7 +98,7 @@
          <DataGridTextColumn Header="Framework" Binding="{Binding TargetFramework}" Width="*"/>
          <DataGridTextColumn Header="Project arch" Binding="{Binding PlatformTarget}" Width="100"/>
          <DataGridTextColumn Header="Next build" Binding="{Binding BuildArchitecture}" Width="100"/>
-         <DataGridTextColumn Header="Runtime" Binding="{Binding RuntimeIdentifier}" Width="*"/>
+         <DataGridTextColumn Header="Runtime" Width="*"><DataGridTextColumn.Binding><MultiBinding Converter="{StaticResource RuntimeIdentifierDisplay}"><Binding Path="RuntimeIdentifier"/><Binding Path="PlatformTarget"/></MultiBinding></DataGridTextColumn.Binding></DataGridTextColumn>
          <DataGridTextColumn Header="Status" Binding="{Binding StatusDisplay}" Width="*" MinWidth="280">
           <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="ToolTip" Value="{Binding StatusDisplay}"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style></DataGridTextColumn.ElementStyle>
          </DataGridTextColumn>
@@ -199,6 +199,14 @@
           <TextBlock Style="{StaticResource RepairDetail}" Text="Repair known Windows shaders and RoundLine buffer counts."/>
          </DockPanel>
          <DockPanel Style="{StaticResource RepairRow}">
+          <Button Content="Recover HLSL + Compile" Click="RecoverShaders_Click" Style="{StaticResource RepairAction}"/>
+          <TextBlock Style="{StaticResource RepairDetail}" Text="Recover and compile effects for review; does not replace game XNBs."/>
+         </DockPanel>
+         <DockPanel Style="{StaticResource RepairRow}">
+          <Button Content="Package / Deploy Recovered Shaders" Click="PackageRecoveredShaders_Click" Style="{StaticResource RepairAction}"/>
+          <TextBlock Style="{StaticResource RepairDetail}" Text="Verify original hashes, package Windows XNBs; optionally deploy with backups and confirmation."/>
+         </DockPanel>
+         <DockPanel Style="{StaticResource RepairRow}">
           <Button Content="Convert Audio" Click="ConvertXnbAudio_Click" Style="{StaticResource RepairAction}"/>
           <TextBlock Style="{StaticResource RepairDetail}" Text="Convert Song and SoundEffect XNBs to Windows formats."/>
          </DockPanel>
@@ -223,6 +231,9 @@
            <TextBlock Text="XNB extractor"/><TextBox x:Name="EffectsExtractorBox" Text="C:\source\xnb-extractor\bin\x64\Release\net9.0-windows\XnbExtractor.exe"/>
            <TextBlock Text="FFmpeg"/><TextBox x:Name="AudioFfmpegBox"/>
            <TextBlock Text="Wave bank decoder"/><TextBox x:Name="WaveBankDecoderBox"/>
+           <TextBlock Text="XNA effect decompiler project"/><TextBox x:Name="ShaderDecompilerBox" Text="C:\source\Indie-Games-Core\tools\XnaEffectDecompiler\XnaEffectDecompiler.csproj"/>
+           <WrapPanel><CheckBox x:Name="ShaderRecoveryRecurseBox" Content="Recover subfolders" IsChecked="True" Margin="5"/><CheckBox x:Name="ShaderRecoveryOverwriteBox" Content="Replace previous recovered output" Margin="5"/></WrapPanel>
+           <CheckBox x:Name="ShaderDeployBox" Content="Deploy packaged effects to Content (requires confirmation; backs up originals)" Margin="5"/>
            <TextBlock Text="Effect conversion script"/><TextBox x:Name="EffectsScriptBox" Text="C:\PycharmProjects\xenia-game-manager\src\scripts\Convert-XnbEffects.ps1"/>
            <WrapPanel><CheckBox x:Name="EffectsRecurseBox" Content="Include subfolders" IsChecked="True" Margin="5"/><CheckBox x:Name="EffectsOverwriteBox" Content="Overwrite effects" Margin="5"/></WrapPanel>
            <Button Content="Convert other effects" Click="ConvertXnbEffects_Click" HorizontalAlignment="Left"/>

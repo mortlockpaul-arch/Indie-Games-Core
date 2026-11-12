@@ -151,6 +151,10 @@
       <Platform Solution="*|x64" Project="x64" />
       <Platform Solution="*|x86" Project="x86" />
     </Project>
+    <Project Path="D:/indie-game-archive/ZP2KX - Zombies and Pterodactyls 20XX (World) (XBLIG)/ZP2KX - Zombies and Pterodactyls 20XX (World) (XBLIG).csproj">
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|x86" Project="x86" />
+    </Project>
   </Folder>
   <Folder Name="/Library-Projects/DigitalRune/">
     <Project Path="DigitalRune/Build/Modern/DigitalRune.Animation/DigitalRune.Animation.csproj" />
@@ -172,9 +176,20 @@
   <Folder Name="/Tools/">
     <Project Path="Tools/ShaderDemoBrowser/ShaderDemoBrowser.csproj" />
     <Project Path="tools/XnaAssemblyRedirector/XnaAssemblyRedirector.csproj" />
+    <Project Path="tools/XnaContentReaderRepair/XnaContentReaderRepair.csproj" />
     <Project Path="Tools/XnaEffectDecompiler/Vendor/HlslDecompiler/HlslDecompiler.csproj" />
     <Project Path="Tools/XnaEffectDecompiler/XnaEffectDecompiler.csproj" />
+    <Project Path="tools/XnbReaderInspector/XnbReaderInspector.csproj" />
   </Folder>
+  <Project Path="D:/indie-game-archive/21 Ball Snooker Champion (World) (XBLIG)/21 Ball Snooker Champion (World) (XBLIG).csproj">
+    <Platform Solution="*|Any CPU" Project="x86" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
+  <Project Path="D:/indie-game-archive/21 Ball Snooker LIVE (World) (XBLIG)/21 Ball Snooker LIVE (World) (XBLIG).csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
   <Project Path="D:/indie-game-archive/A-Band (World) (XBLIG)/A-Band (World) (XBLIG).csproj">
     <Platform Solution="*|Any CPU" Project="x86" />
     <Platform Solution="*|x64" Project="x64" />
@@ -209,6 +224,7 @@
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />
   </Project>
+  <Project Path="D:/indie-game-archive/This Is Hard (World) (XBLIG)/This Is Hard (World) (XBLIG).csproj" />
   <Project Path="RetroShelf/RetroShelf.csproj">
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />

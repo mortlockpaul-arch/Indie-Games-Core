@@ -1,3 +1,4 @@
+using SynapseGaming.LightingSystem.Components;
 using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
@@ -8,7 +9,7 @@ using SynapseGaming.LightingSystem.Collision;
 using SynapseGaming.LightingSystem.Core;
 using SynapseGaming.LightingSystem.Serialization;
 
-namespace SynapseGaming.LightingSystem.Components;
+namespace SynapseGaming.LightingSystem.Core;
 
 [Serializable]
 public class ComponentCollection<T> : IGroup<IComponent<T>>, IFullSerializable, ISerializable where T : class

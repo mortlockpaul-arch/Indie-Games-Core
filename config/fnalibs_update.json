@@ -10,7 +10,7 @@
   "installed_artifact_id": 12545852238,
   "installed_artifact_name": "fnalibs",
   "artifact_created_at": "2026-10-24T03:08:44Z",
-  "last_updated": "2026-11-04T20:42:20.682503+00:00",
+  "last_updated": "2026-11-12T16:22:11.592176+00:00",
   "installed_files": [
     "D3D12/D3D12Core.dll",
     "README.txt",
@@ -35,17 +35,25 @@
   "install_directory": "C:\\source\\Indie-Games\\fnalibs",
   "artifacts": [
     {
+      "name": "SDL3-steamrt3-x86_64",
+      "id": 13919170817,
+      "file_count": 1,
+      "files": [
+        "libSDL3.so.0"
+      ]
+    },
+    {
       "name": "fnalibs-apple",
-      "id": 13296900167,
+      "id": 13918721800,
       "file_count": 15,
       "files": [
-        "README.txt",
         "appletvos\\libFAudio.a",
         "appletvos\\libFNA3D.a",
         "appletvos\\libSDL3.a",
+        "README.txt",
         "appletvos\\libmojoshader.a",
-        "appletvos\\libtheorafile.a",
         "iphoneos\\libFAudio.a",
+        "appletvos\\libtheorafile.a",
         "iphoneos\\libFNA3D.a",
         "iphoneos\\libSDL3.a",
         "iphoneos\\libmojoshader.a",
@@ -57,29 +65,13 @@
       ]
     },
     {
-      "name": "SDL3-steamrt3-aarch64",
-      "id": 13296442020,
-      "file_count": 1,
-      "files": [
-        "libSDL3.so.0"
-      ]
-    },
-    {
-      "name": "SDL3-steamrt3-x86_64",
-      "id": 13296332140,
-      "file_count": 1,
-      "files": [
-        "libSDL3.so.0"
-      ]
-    },
-    {
       "name": "fnalibs",
-      "id": 13296282409,
+      "id": 13918682090,
       "file_count": 18,
       "files": [
         "D3D12\\D3D12Core.dll",
-        "README.txt",
         "lib64\\libFAudio.so.0",
+        "README.txt",
         "lib64\\libFNA3D.so.0",
         "lib64\\libSDL3.so.0",
         "lib64\\libtheorafile.so",
@@ -95,6 +87,14 @@
         "x86\\FNA3D.dll",
         "x86\\SDL3.dll",
         "x86\\libtheorafile.dll"
+      ]
+    },
+    {
+      "name": "SDL3-steamrt3-aarch64",
+      "id": 13918652272,
+      "file_count": 1,
+      "files": [
+        "libSDL3.so.0"
       ]
     }
   ],

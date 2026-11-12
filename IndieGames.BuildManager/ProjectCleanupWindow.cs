@@ -19,13 +19,20 @@ public sealed class ProjectCleanupWindow : Window
     private readonly Button _cancel = new() { Content="Cancel", IsEnabled=false };
     private readonly TextBox _search = new() { MinWidth=260, Margin=new Thickness(4) };
     private readonly ComboBox _filter = new() { ItemsSource=new[] { "All", "Disable", "Delete backup", "Keep", "Review", "Failed" }, SelectedIndex=0, Margin=new Thickness(4) };
+    private readonly DataGrid _backupGrid = new() { AutoGenerateColumns=false, IsReadOnly=true, CanUserAddRows=false };
+    private readonly Button _backupPreview = new() { Content="Preview all backups" };
+    private readonly Button _backupDelete = new() { Content="Permanently delete previewed backups", IsEnabled=false };
+    private readonly TextBlock _backupStatus = new() { Text="No backups scanned.", Margin=new Thickness(4), TextWrapping=TextWrapping.Wrap };
+    private IReadOnlyList<BackupCleanupEntry> _backupEntries = Array.Empty<BackupCleanupEntry>();
+    private bool _backupBusy;
+    private bool _backupDeleteAttempted;
     private ProjectCleanupPlan? _plan;
     private CancellationTokenSource? _cts;
     public bool Changed { get; private set; }
     public ProjectCleanupWindow(string archive)
     {
         _archive=archive;
-        Title=AppVersion.WindowTitle("Archive Project Cleanup"); Width=1250; Height=740; MinWidth=850; MinHeight=480; WindowStartupLocation=WindowStartupLocation.CenterOwner;
+        Title=AppVersion.WindowTitle("Archive Maintenance"); Width=1250; Height=740; MinWidth=850; MinHeight=480; WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var panel = new DockPanel { Margin=new Thickness(16) }; Content=panel;
         var header = new StackPanel(); DockPanel.SetDock(header,Dock.Top); panel.Children.Add(header);
         header.Children.Add(new TextBlock { Text=archive, FontWeight=FontWeights.SemiBold, TextWrapping=TextWrapping.Wrap });
@@ -38,10 +45,25 @@ public sealed class ProjectCleanupWindow : Window
         DockPanel.SetDock(_progress,Dock.Bottom); panel.Children.Add(_progress);
         foreach (var column in new[] { ("Action","Action",110d),("Status","Status",130d),("Path","Path",340d),("Reason","Reason",330d),("Disabled destination","Destination",340d) })
             _grid.Columns.Add(new DataGridTextColumn { Header=column.Item1, Binding=new Binding(column.Item2), Width=column.Item3 });
-        panel.Children.Add(_grid);
-        var allBackups=new Button { Content="Delete all backups…", ToolTip="Preview backup folders and loose file backups, then permanently delete the previewed items and report space saved." };
-        ((Panel)_scan.Parent).Children.Add(allBackups);
-        allBackups.Click+=(_,_)=>new BackupCleanupWindow(_archive){Owner=this}.ShowDialog();
+        var tabs = new TabControl();
+        panel.Children.Add(tabs);
+        tabs.Items.Add(new TabItem { Header="Project cleanup", Content=_grid });
+        var backupPanel = new DockPanel { Margin=new Thickness(8) };
+        var backupHeader = new StackPanel();
+        DockPanel.SetDock(backupHeader,Dock.Top);
+        backupPanel.Children.Add(backupHeader);
+        backupHeader.Children.Add(new TextBlock { Text="Preview recognized backup folders and loose .bak / .before-* files. Deletion is permanent, not sent to the Recycle Bin. Linked or changed paths are refused by the cleanup service.", TextWrapping=TextWrapping.Wrap, Margin=new Thickness(4,4,4,8) });
+        var backupButtons = new WrapPanel();
+        backupHeader.Children.Add(backupButtons);
+        foreach (var button in new[] { _backupPreview, _backupDelete }) { button.Margin=new Thickness(4); button.Padding=new Thickness(10,6,10,6); backupButtons.Children.Add(button); }
+        backupHeader.Children.Add(_backupStatus);
+        _backupGrid.Columns.Add(new DataGridTextColumn { Header="Backup", Binding=new Binding("Path"), Width=new DataGridLength(1,DataGridLengthUnitType.Star) });
+        _backupGrid.Columns.Add(new DataGridTextColumn { Header="Bytes", Binding=new Binding("Bytes"), Width=130 });
+        _backupGrid.Columns.Add(new DataGridTextColumn { Header="Files", Binding=new Binding("Files"), Width=90 });
+        backupPanel.Children.Add(_backupGrid);
+        tabs.Items.Add(new TabItem { Header="All backups", Content=backupPanel });
+        _backupPreview.Click += async (_,_) => await PreviewBackups();
+        _backupDelete.Click += async (_,_) => await DeleteBackups();
         _scan.Click += async (_,_) => await Scan();
         _apply.Click += async (_,_) => await Apply();
         _cancel.Click += (_,_) => _cts?.Cancel();
@@ -51,8 +73,75 @@ public sealed class ProjectCleanupWindow : Window
             var dialog = new SaveFileDialog { Filter="CSV report (*.csv)|*.csv", FileName="game-project-cleanup.csv" };
             if (dialog.ShowDialog(this) == true) { try { ArchiveProjectCleanup.Export(_plan,dialog.FileName); _progress.Text="Report saved: " + dialog.FileName; } catch (Exception e) { MessageBox.Show(this,e.Message,Title); } }
         };
-        Closing += (_,e) => { if (_cts != null) { e.Cancel=true; _cts.Cancel(); _progress.Text="Cancelling… Close this window when the operation stops."; } };
+        Closing += (_,e) => { if (_backupBusy) { e.Cancel=true; _backupStatus.Text="Wait for the backup operation to finish before closing."; return; } if (_cts != null) { e.Cancel=true; _cts.Cancel(); _progress.Text="Cancelling… Close this window when the operation stops."; } };
     }
+
+    private void BackupBusy(bool busy)
+    {
+        _backupBusy=busy;
+        _backupPreview.IsEnabled=!busy && _cts==null;
+        _backupDelete.IsEnabled=!busy && _cts==null && !_backupDeleteAttempted && _backupEntries.Count>0;
+        _scan.IsEnabled=!busy && _cts==null;
+        _apply.IsEnabled=!busy && _cts==null && _plan?.Rows.Any(r=>r.Actionable && r.Status=="Preview")==true;
+        _cancel.IsEnabled=!busy && _cts!=null;
+    }
+
+    private async Task PreviewBackups()
+    {
+        BackupBusy(true);
+        _backupEntries=Array.Empty<BackupCleanupEntry>();
+        _backupDeleteAttempted=false;
+        _backupGrid.ItemsSource=null;
+        _backupStatus.Text="Scanning backups…";
+        try
+        {
+            var found=await Task.Run(()=>BackupCleanup.Preview(_archive));
+            _backupEntries=found;
+            _backupGrid.ItemsSource=found;
+            _backupStatus.Text=$"{found.Count:N0} backup items, {found.Sum(e=>e.Files):N0} files, {found.Sum(e=>e.Bytes)/1048576d:N1} MiB. Nothing deleted.";
+        }
+        catch(Exception ex) { _backupStatus.Text="Backup preview failed: "+ex.Message; }
+        finally { BackupBusy(false); }
+    }
+
+    private async Task DeleteBackups()
+    {
+        if(_backupEntries.Count==0 || _backupDeleteAttempted) return;
+        var selected=_backupEntries;
+        if(MessageBox.Show(this,$"Permanently delete {selected.Count:N0} previewed backup items ({selected.Sum(e=>e.Bytes)/1048576d:N1} MiB)?\n\nThis cannot be undone. No Recycle Bin. Changed or linked paths will be refused.","Confirm backup cleanup",MessageBoxButton.YesNo,MessageBoxImage.Warning)!=MessageBoxResult.Yes) return;
+        _backupDeleteAttempted=true;
+        BackupBusy(true);
+        int completed=0, deletedFiles=0;
+        long deletedBytes=0;
+        try
+        {
+            var result=await Task.Run(()=>
+            {
+                int items=0, files=0; long bytes=0;
+                foreach(var entry in selected)
+                {
+                    BackupCleanup.Delete(entry,size=>{bytes+=size;files++;});
+                    items++;
+                }
+                return (items,files,bytes);
+            });
+            (completed,deletedFiles,deletedBytes)=result;
+            Changed=true;
+            _backupStatus.Text=$"Deleted {completed:N0} backup items ({deletedFiles:N0} files). Space recovered: {deletedBytes/1048576d:N1} MiB ({deletedBytes:N0} bytes). Scan again to refresh.";
+        }
+        catch(Exception ex)
+        {
+            _backupStatus.Text="Backup deletion stopped: "+ex.Message+". Some files may have been deleted. Scan again before retrying.";
+            Changed=true;
+        }
+        finally
+        {
+            _backupEntries=Array.Empty<BackupCleanupEntry>();
+            _backupGrid.ItemsSource=null;
+            BackupBusy(false);
+        }
+    }
+
     private void RefreshFilter()
     {
         if (_grid.ItemsSource == null) return;
@@ -69,8 +158,9 @@ public sealed class ProjectCleanupWindow : Window
     private void Busy(bool busy)
     {
         _scanProgress.IsIndeterminate=busy; _scanProgress.Value=!busy && _plan != null ? 1 : 0;
-        _scan.IsEnabled=!busy; _cancel.IsEnabled=busy; _export.IsEnabled=!busy && _plan != null;
-        _apply.IsEnabled=!busy && _plan?.Rows.Any(r=>r.Actionable && r.Status == "Preview") == true;
+        _backupPreview.IsEnabled=!busy && !_backupBusy; _backupDelete.IsEnabled=!busy && !_backupBusy && !_backupDeleteAttempted && _backupEntries.Count>0;
+        _scan.IsEnabled=!busy && !_backupBusy; _cancel.IsEnabled=busy; _export.IsEnabled=!busy && _plan != null;
+        _apply.IsEnabled=!busy && !_backupBusy && _plan?.Rows.Any(r=>r.Actionable && r.Status == "Preview") == true;
     }
     private async Task Scan()
     {
