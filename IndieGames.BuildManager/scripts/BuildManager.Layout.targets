@@ -9,7 +9,37 @@
   <BaseIntermediateOutputPath>$(BuildManagerCache)\obj\$(_BuildManagerProjectKey)\</BaseIntermediateOutputPath>
   <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)\$(Platform)\$(TargetFramework)\$(RuntimeIdentifier)\</IntermediateOutputPath>
  </PropertyGroup>
- <Target Name="BuildManagerOutputNote" AfterTargets="Build" Condition="'$(MSBuildProjectFullPath)' == '$(BuildManagerMainProject)' and '$(OutputType)' != 'Library' and '$(IsCrossTargetingBuild)' != 'true'">
-  <Message Importance="high" Text="Playable game: $(TargetDir)" />
+
+ <!-- The compiler writes the implementation assembly into IntermediateOutputPath.
+      Explicitly deploy it after Build so an older DLL cannot survive in the
+      playable directory when output-path redirection and incremental builds mix. -->
+ <Target Name="BuildManagerDeployMainAssembly"
+         AfterTargets="Build"
+         Condition="'$(MSBuildProjectFullPath)' == '$(BuildManagerMainProject)' and '$(OutputType)' != 'Library' and '$(IsCrossTargetingBuild)' != 'true' and '$(BuildManagerGameOutput)' != ''">
+  <PropertyGroup>
+   <_BMCompiledAssembly>$(IntermediateOutputPath)$(TargetFileName)</_BMCompiledAssembly>
+   <_BMDeployedAssembly>$(BuildManagerGameOutput)\$(TargetFileName)</_BMDeployedAssembly>
+   <_BMCompiledPdb>$(IntermediateOutputPath)$(TargetName).pdb</_BMCompiledPdb>
+   <_BMDeployedPdb>$(BuildManagerGameOutput)\$(TargetName).pdb</_BMDeployedPdb>
+  </PropertyGroup>
+  <Error Condition="!Exists('$(_BMCompiledAssembly)')"
+         Text="Build Manager cannot locate compiled assembly '$(_BMCompiledAssembly)'. Deployment stopped to prevent launching a stale DLL." />
+  <MakeDir Directories="$(BuildManagerGameOutput)" />
+  <Copy SourceFiles="$(_BMCompiledAssembly)" DestinationFiles="$(_BMDeployedAssembly)" SkipUnchangedFiles="false" />
+  <Copy Condition="Exists('$(_BMCompiledPdb)')" SourceFiles="$(_BMCompiledPdb)" DestinationFiles="$(_BMDeployedPdb)" SkipUnchangedFiles="false" />
+  <GetFileHash Files="$(_BMCompiledAssembly)" Algorithm="SHA256">
+   <Output TaskParameter="Items" ItemName="_BMSourceHash" />
+  </GetFileHash>
+  <GetFileHash Files="$(_BMDeployedAssembly)" Algorithm="SHA256">
+   <Output TaskParameter="Items" ItemName="_BMDestinationHash" />
+  </GetFileHash>
+  <Error Condition="'@(_BMSourceHash->'%(FileHash)')' != '@(_BMDestinationHash->'%(FileHash)')'"
+         Text="Build Manager deployment verification failed: compiled and deployed assembly hashes differ." />
+  <Message Importance="high" Text="Build Manager deployed and verified: $(_BMDeployedAssembly)" />
+ </Target>
+
+ <Target Name="BuildManagerOutputNote" AfterTargets="BuildManagerDeployMainAssembly"
+         Condition="'$(MSBuildProjectFullPath)' == '$(BuildManagerMainProject)' and '$(OutputType)' != 'Library' and '$(IsCrossTargetingBuild)' != 'true'">
+  <Message Importance="high" Text="Playable game: $(BuildManagerGameOutput)\" />
  </Target>
 </Project>

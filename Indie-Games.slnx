@@ -190,7 +190,16 @@
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />
   </Project>
+  <Project Path="D:/indie-game-archive/360 Mega Pack HD Remix (XBLIG)/360 Mega Pack HD Remix (XBLIG).csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
   <Project Path="D:/indie-game-archive/A-Band (World) (XBLIG)/A-Band (World) (XBLIG).csproj">
+    <Platform Solution="*|Any CPU" Project="x86" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
+  <Project Path="D:/indie-game-archive/ABC Fun (World) (XBLIG)/ABC Fun (World) (XBLIG).csproj">
     <Platform Solution="*|Any CPU" Project="x86" />
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />

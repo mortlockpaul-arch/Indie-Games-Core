@@ -543,14 +543,35 @@ public static void ScanXnaReferences(string folder)
         try
         {
             TargetBox.Text = architecture;
-            string runtime = RuntimeBox.Text.Trim();
-            int separator = runtime.LastIndexOf('-');
-            if (architecture != "AnyCPU" && separator > 0 &&
-                runtime[(separator + 1)..] is "x86" or "x64" or "arm64" or "arm")
-                RuntimeBox.Text = runtime[..(separator + 1)] + architecture;
+            RuntimeBox.Text = CompatibleRuntimeIdentifier(architecture, RuntimeBox.Text);
             UpdateBuildArchitectureRows();
         }
         finally { _updatingArchitecture = false; }
+    }
+
+    // Keep the build command's RID compatible with the selected PlatformTarget.
+    // This is deliberately independent of the grid's display-only converter.
+    private static string CompatibleRuntimeIdentifier(string architecture, string? requested)
+    {
+        string runtime = (requested ?? "").Trim();
+        if (architecture.Equals("x86", StringComparison.OrdinalIgnoreCase) ||
+            architecture.Equals("x64", StringComparison.OrdinalIgnoreCase))
+        {
+            string suffix = architecture.ToLowerInvariant();
+            if (runtime.Length == 0 || runtime.Contains("$(", StringComparison.Ordinal) ||
+                runtime.Equals("Not specified", StringComparison.OrdinalIgnoreCase))
+                return "win-" + suffix;
+
+            // Preserve the OS portion of a Windows RID (e.g. win10-x64).
+            // A non-Windows RID should not be silently changed into a Windows RID.
+            int split = runtime.LastIndexOf('-');
+            if (split > 0 && runtime.StartsWith("win", StringComparison.OrdinalIgnoreCase))
+                return runtime[..(split + 1)] + suffix;
+            throw new InvalidOperationException($"RuntimeIdentifier '{runtime}' cannot be used with Windows {architecture}.");
+        }
+        // AnyCPU should not inherit a stale x86/x64 runtime identifier.
+        return runtime.Contains("$(", StringComparison.Ordinal) ||
+            runtime is "win-x86" or "win-x64" ? "" : runtime;
     }
 
     private void UpdateBuildArchitectureRows()
@@ -816,7 +837,12 @@ public static void ScanXnaReferences(string folder)
                 args.Add($"-p:PlatformTarget={Value(TargetBox)}");
                 args.AddRange(profile.Arguments);
                 if (!string.IsNullOrWhiteSpace(FrameworkBox.Text)) args.Add($"-p:TargetFramework={FrameworkBox.Text.Trim()}");
-                if (!string.IsNullOrWhiteSpace(RuntimeBox.Text)) args.Add($"-p:RuntimeIdentifier={RuntimeBox.Text.Trim()}");
+                // Never pass a stale x64 RID with an x86 PlatformTarget (NETSDK1032).
+                string buildRuntime = CompatibleRuntimeIdentifier(Value(TargetBox), RuntimeBox.Text);
+                if (!string.IsNullOrWhiteSpace(buildRuntime))
+                    args.Add($"-p:RuntimeIdentifier={buildRuntime}");
+                if (!string.Equals(buildRuntime, RuntimeBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+                    Log($"RuntimeIdentifier corrected for {Value(TargetBox)}: {RuntimeBox.Text.Trim()} -> {buildRuntime}");
                 if (!string.IsNullOrWhiteSpace(DefineConstantsBox.Text))
                 {
                     // MSBuild -p treats semicolons as property separators.
@@ -948,8 +974,8 @@ public static void ScanXnaReferences(string folder)
                 {
                     TargetBox.Text = architecture;
                 }
-                if (!project.RuntimeIdentifier.Contains(';') && !project.RuntimeIdentifier.Contains("$("))
-                    RuntimeBox.Text = project.RuntimeIdentifier;
+                if (!project.RuntimeIdentifier.Contains(';'))
+                    RuntimeBox.Text = CompatibleRuntimeIdentifier(architecture, project.RuntimeIdentifier);
                 if (!project.TargetFramework.Contains(';') && !project.TargetFramework.Contains("$("))
                     FrameworkBox.Text = project.TargetFramework;
             }
@@ -1412,19 +1438,37 @@ public static void ScanXnaReferences(string folder)
         if (!File.Exists(ffmpeg)) { Log("FFmpeg not found: " + ffmpeg); return; }
         string archive = Path.GetFullPath(RootBox.Text.Trim());
         string prefix = Path.TrimEndingDirectorySeparator(archive) + Path.DirectorySeparatorChar;
-        var folders = selected.Select(p => Path.GetFullPath(p.Path))
-            .Select(path => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                ? Path.Combine(archive, Path.GetRelativePath(archive, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
-                : Path.GetDirectoryName(path)!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var projects = selected.Select(p => new { Project = Path.GetFullPath(p.Path) })
+            .Select(p => new
+            {
+                p.Project,
+                Folder = p.Project.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    ? Path.Combine(archive, Path.GetRelativePath(archive, p.Project)
+                        .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0])
+                    : Path.GetDirectoryName(p.Project)!
+            })
+            .GroupBy(p => p.Folder, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First()).ToList();
         await ExecuteAsync(async token =>
         {
-            foreach (string folder in folders)
+            foreach (var game in projects)
             {
-                string content = Path.Combine(folder, "Content");
-                if (!Directory.Exists(content)) { Log("SKIP: No Content folder: " + folder); continue; }
-                Log("=== Converting videos: " + Path.GetFileName(folder) + " ===");
-                var results = await VideoConverter.ConvertAsync(content, ffmpeg, Log, token);
-                Log($"Videos: {results.Count(r => r.Status == "Converted")} converted, {results.Count(r => r.Status == "Skipped")} existing OGVs preserved, {results.Count(r => r.Status == "Failed")} failed. Rebuild to copy content to bin; restart the game to reload it.");
+                string content = Path.Combine(game.Folder, "Content");
+                if (!Directory.Exists(content)) { Log("SKIP: No Content folder: " + game.Folder); continue; }
+                Log("=== Converting videos: " + Path.GetFileName(game.Folder) + " ===");
+                var results = await VideoConverterImproved.ConvertAsync(content, ffmpeg, Log, token);
+                Log($"Videos: {results.Count(r => r.Status == "Converted")} converted/upgraded, " +
+                    $"{results.Count(r => r.Status == "Skipped")} current, " +
+                    $"{results.Count(r => r.Status == "Failed")} failed.");
+                if (results.Any(r => r.Status == "Failed"))
+                {
+                    Log("Deployment skipped because one or more conversions failed. Existing game videos preserved.");
+                    continue;
+                }
+                string installed = _storage.GameFolder(game.Project);
+                var deployed = await VideoConverterImproved.DeployAsync(content, installed, Log, token);
+                Log($"Installed videos: {deployed.Updated} updated, {deployed.Current} already current, " +
+                    $"{deployed.Failed} failed. Restart the game to reload videos.");
             }
         });
     }

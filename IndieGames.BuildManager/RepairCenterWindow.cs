@@ -1,3 +1,4 @@
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -26,7 +27,7 @@ public sealed class RepairCenterWindow : Window
     public bool CleanIntermediates => _clean.IsChecked == true;
     public bool SetRuntimeIdentifiers => _rids.IsChecked == true;
 
-    public RepairCenterWindow(IReadOnlyList<string> games)
+    public RepairCenterWindow(IReadOnlyList<string> games, IReadOnlyList<string>? gameFolders = null)
     {
         Title = "Repair Center"; Width = 1050; Height = 620; MinWidth = 780; MinHeight = 440;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -65,24 +66,24 @@ public sealed class RepairCenterWindow : Window
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(136) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var navigation = new StackPanel { Margin = new Thickness(0, 0, 10, 0) }; body.Children.Add(navigation);
-        navigation.Children.Add(new TextBlock { Text = "REPAIR LIBRARY", Foreground = Brush("#7285A4"), FontSize = 10, Margin = new Thickness(6, 0, 0, 6) });
-        foreach (string category in new[] { "All Repairs", "Diagnostics", "Source APIs", "Rendering", "Project & SDK" }) {
+        navigation.Children.Add(new TextBlock { Text = "Repair Library", Foreground = Brush("#7285A4"), FontSize = 10, Margin = new Thickness(6, 0, 0, 6) });
+        foreach (string category in new[] { "All Repairs", "Diagnostics", "Source APIs", "Rendering", "Project & SDK", "XNA 3 → FNA" }) {
             var tab = new Button { Content = category, HorizontalContentAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 3), BorderThickness = new Thickness(0), Padding = new Thickness(9, 5, 7, 5) };
             tab.Click += (_, _) => { _category = category; Filter(); };
             navigation.Children.Add(tab); _tabs[category] = tab;
         }
         var content = new DockPanel(); Grid.SetColumn(content, 1); body.Children.Add(content);
         var tools = new StackPanel { Margin = new Thickness(0, 0, 0, 5) }; DockPanel.SetDock(tools, Dock.Top); content.Children.Add(tools);
-        tools.Children.Add(new TextBlock { Text = "Find a repair or function", Foreground = Brush("#A4B4CF"), Margin = new Thickness(0, 0, 0, 3) });
+        tools.Children.Add(new TextBlock { Text = "Find a Repair or Function", Foreground = Brush("#A4B4CF"), Margin = new Thickness(0, 0, 0, 3) });
         _search.Background = Brush("#141E32"); _search.Foreground = Foreground; _search.BorderBrush = Brush("#34445F"); _search.Padding = new Thickness(8, 4, 8, 4);
         _search.ToolTip = "Search titles, descriptions, warning codes, or categories"; _search.TextChanged += (_, _) => Filter(); tools.Children.Add(_search);
         var presets = new WrapPanel { Margin = new Thickness(0, 5, 0, 0) }; tools.Children.Add(presets);
         void Preset(string label, Func<Choice, bool> select) {
-            var button = new Button { Content = label, ToolTip = "Replace the current selection with " + label.ToLowerInvariant() + " repairs. Use Preview selected to review before applying.", Padding = new Thickness(8, 4, 8, 4), FontSize = 12 };
+            var button = new Button { Content = label, ToolTip = "Replace the current selection with " + label.ToLowerInvariant() + " repairs. Use Preview Selected to review before applying.", Padding = new Thickness(8, 4, 8, 4), FontSize = 12 };
             button.Click += (_, _) => { foreach (var pair in _checks) pair.Value.IsChecked = select(pair.Key); RefreshSelection(); };
             presets.Children.Add(button);
         }
-        Preset("Recommended", c => c.Recommended); Preset("XNA Compatibility", c => c.Id is "Repair-Xna3" or "Repair-XnaColors" or "Repair-XnaSpriteBatch");
+        Preset("Recommended", c => c.Recommended); Preset("XNA Compatibility", c => c.Id.StartsWith("Python:", StringComparison.Ordinal) || c.Id is "Repair-XnaColors" or "Repair-XnaSpriteBatch");
         Preset("Warnings + Ambiguities", c => c.Category == "Diagnostics"); Preset("Clear", _ => false);
         var options = new StackPanel { Margin = new Thickness(4, 8, 0, 8) };
         foreach (var box in new[] { _restore, _clean, _rids }) { box.Foreground = Foreground; box.Margin = new Thickness(0, 4, 0, 4); options.Children.Add(box); }
@@ -97,9 +98,9 @@ public sealed class RepairCenterWindow : Window
         var columnHeader = new Grid { Margin = new Thickness(0, 0, 6, 4) };
         columnHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(265) });
         columnHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var repairColumn = new TextBlock { Text = "REPAIR", FontSize = 10, Foreground = Brush("#8196B5") };
+        var repairColumn = new TextBlock { Text = "Repair", FontSize = 10, Foreground = Brush("#8196B5") };
         Grid.SetColumn(repairColumn, 0); columnHeader.Children.Add(repairColumn);
-        var functionColumn = new TextBlock { Text = "REPAIR ID / FUNCTION", FontSize = 10, Foreground = Brush("#8196B5") };
+        var functionColumn = new TextBlock { Text = "Repair ID / Function", FontSize = 10, Foreground = Brush("#8196B5") };
         Grid.SetColumn(functionColumn, 1); columnHeader.Children.Add(functionColumn);
         tools.Children.Add(columnHeader);
 
@@ -149,7 +150,65 @@ public sealed class RepairCenterWindow : Window
         var close = new Button { Content = "Close" }; close.Click += (_, _) => DialogResult = false; actions.Children.Add(close);
         _preview.Content = "Preview Selected"; _preview.Click += (_, _) => Run(true); actions.Children.Add(_preview);
         _apply.Content = "Apply Repairs"; _apply.Background = Brush("#2D766D"); _apply.BorderBrush = Brush("#59BFAE"); _apply.Margin = new Thickness(0); _apply.Click += (_, _) => Run(false); actions.Children.Add(_apply);
+        if (gameFolders is { Count: > 0 }) SuggestRepairs(gameFolders);
         Filter(); RefreshSelection();
+    }
+
+    // Conservative suggestions only: never apply a repair without the user's choice.
+    void SuggestRepairs(IReadOnlyList<string> folders)
+    {
+        var patterns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Repair-BasicEffectLightingMatrices"] = new[] { @"basicEffect\.LightingEnabled\s*=\s*true", @"basicEffect\.EnableDefaultLighting\s*\(" },
+            ["Repair-XnaSpriteBatch"] = new[] { @"SpriteBatch\s*\.\s*Begin\s*\(", @"SpriteBlendMode\." },
+            ["Repair-XnaColors"] = new[] { @"Color\.TransparentBlack", @"new\s+Color\s*\(" },
+            ["Repair-XnaStorageSelector"] = new[] { @"StorageDevice\.BeginShowSelector", @"StorageDevice\.EndShowSelector" },
+            ["Repair-XnaOpenContainer"] = new[] { @"\.BeginOpenContainer\s*\(", @"\.EndOpenContainer\s*\(" },
+            ["Repair-XnaSignedInGamerAvatar"] = new[] { @"SignedInGamer.*\.Avatar", @"Gamer\.Avatar" },
+            ["Python:fix_xna_vertex_elements"] = new[] { @"VertexPosition\w*\.VertexElements", @"VertexElement\s*\(" },
+            ["Python:fix_graphics_vertex_declaration"] = new[] { @"\.VertexDeclaration\s*=", @"VertexDeclaration\s*\(" },
+            ["Python:fix_graphics_particle_spritebatch"] = new[] { @"ParticleSystem", @"ParticleSettings" }
+        };
+        var hits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in folders.Where(Directory.Exists))
+        {
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+            foreach (var file in files)
+            {
+                if (file.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    .Any(s => s is "obj" or "bin" or ".backups" or "XnaRedirect-Patched")) continue;
+                string source;
+                try { source = File.ReadAllText(file); }
+                catch (IOException) { continue; }
+                catch (UnauthorizedAccessException) { continue; }
+                foreach (var pattern in patterns)
+                    if (pattern.Value.Any(p => System.Text.RegularExpressions.Regex.IsMatch(source, p))) hits.Add(pattern.Key);
+            }
+        }
+        foreach (var folder in folders.Where(Directory.Exists))
+        {
+            string content = Path.Combine(folder, "Content");
+            if (!Directory.Exists(content)) continue;
+            try
+            {
+                if (Directory.EnumerateFiles(content, "*_en-UK.*", SearchOption.AllDirectories)
+                    .Any(f => !File.Exists(System.Text.RegularExpressions.Regex.Replace(f, @"_en-UK\.", "_en-GB.", System.Text.RegularExpressions.RegexOptions.IgnoreCase))))
+                    hits.Add("Repair-ContentLocaleAliases");
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        foreach (var pair in _checks)
+            if (hits.Contains(pair.Key.Id)) pair.Value.IsChecked = true;
+        if (hits.Count > 0)
+        {
+            var banner = new TextBlock { Text = $"Source Scan Suggested {hits.Count} Repair Type(s). Review the Pre-Ticked Options; Preview Before Applying.",
+                Foreground = Brush("#7AD8C8"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 6) };
+            _selection.ToolTip = banner.Text;
+        }
     }
 
     Button Help(string title, string description)
@@ -173,11 +232,17 @@ public sealed class RepairCenterWindow : Window
         foreach (var tab in _tabs) tab.Value.Background = Brush(tab.Key == _category ? "#263A54" : "#111A2C");
     }
 
-    static IEnumerable<Choice> Choices() => new[] {
+    // Manifest-driven Python repair choices; no hardcoded function inventory.
+    static IEnumerable<Choice> Choices()
+    {
+        var choices = new List<Choice> {
         new Choice("Repair-Ambiguities", "Ambiguous Types", "Fix CS0104 for XNA Color and Farseer Path. Report CS0121 overloads for review. Python 3.10+.", "Diagnostics", Recommended: true),
         new Choice("Repair-Warnings", "Warning Fixer", "Fix unused literal locals, local self-assignments and unused event sender nullability. Other warnings stay in the review report.", "Diagnostics", Recommended: true),
         new Choice("Repair-DeepNullability", "Deep Nullability Analysis", "Trace CS8618 field assignments and references using the evaluated project. Preview compiler-checked private-field annotations; retain lifecycle and content-loading cases for review.", "Diagnostics"),
+        new Choice("Repair-ContentLocaleAliases", "Repair Content Locale Aliases", "Create missing en-GB XNB aliases from existing en-UK content. Does not overwrite files.", "Rendering"),
+        new Choice("Repair-BasicEffectLightingMatrices", "Repair BasicEffect Lighting Matrices", "Safeguard known GeometricPrimitive Draw overloads against singular lighting matrices. Backup before applying.", "Rendering"),
         new Choice("Repair-XnaColors", "Color Compatibility", "Replace old transparent constants and unsupported Color constructors.", "Rendering", Recommended: true),
+        new Choice("Repair-XnaPremultipliedAlpha", "Fix FNA Alpha / White Screens", "Repair known whiteCover and menuFader colour assignments for FNA premultiplied alpha. Preview before applying.", "Rendering"),
         new Choice("Repair-XnaSpriteBatch", "Sprite Drawing", "Adapt legacy SpriteBatch calls for the current framework.", "Rendering"),
         new Choice("Repair-CronBloom", "Scene Capture", "Targeted back-buffer repairs for CRON, Avatar Insane Race 3D, and Jet Pack War. Python 3.10+.", "Rendering"),
         new Choice("Repair-XnaStorageSelector", "Storage Selector", "Convert legacy device-selector calls to the supported storage API.", "Source APIs"),
@@ -194,5 +259,22 @@ public sealed class RepairCenterWindow : Window
         new Choice("Rename-DllProjects", "Disable Auxiliary Projects", "Rename auxiliary DLL project files. Preview lists this action without running it.", "Project & SDK", true),
         new Choice("Rename-DllProjects-Restore", "Restore Auxiliary Projects", "Restore previously disabled DLL project files. Preview lists this action without running it.", "Project & SDK", true),
         new Choice("Format-XbligProjects", "Format Project XML", "Format project XML with backups. Preview lists this action without running it.", "Project & SDK", true)
-    };
+        };
+        string manifest = Path.Combine(AppContext.BaseDirectory, "scripts", "repair_manifest.json");
+        string canonical = Path.Combine(@"C:\source\Indie-Games-Core", "tools", "XnaRepair", "repair_manifest.json");
+        if (File.Exists(canonical)) manifest = canonical;
+        if (File.Exists(manifest))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifest));
+            foreach (var item in doc.RootElement.GetProperty("individual_repairs").EnumerateArray())
+            {
+                string id = item.GetString()!;
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                string title = string.Join(" ", id.Replace("fix_xna_", "").Replace("fix_", "").Split('_')
+                    .Select(s => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..]));
+                choices.Add(new Choice("Python:" + id, title, "Individual XNA 3 → FNA conversion (Python). Preview before applying.", "XNA 3 → FNA"));
+            }
+        }
+        return choices;
+    }
 }

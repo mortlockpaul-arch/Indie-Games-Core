@@ -49,7 +49,7 @@ public static class GameOverlayInstaller
         if(calls.Any(c=>!BatchCall(c) && !CallsBase(c,"Draw") && !(c.Expression is MemberAccessExpressionSyntax a && a.Expression.ToString() is "GraphicsDevice" or "base.GraphicsDevice" or "this.GraphicsDevice" && a.Name.Identifier.ValueText=="Clear")))
             return Manual("custom rendering calls or render targets.");
         var baseDraw=calls.Where(c=>CallsBase(c,"Draw")).ToArray();
-        if(baseDraw.Length>1 || baseDraw.Any(c=>c.Parent is not ExpressionStatementSyntax stmt || stmt.Parent!=draw?.Body)) return Manual("conditional component rendering.");
+        if(baseDraw.Length>1 || baseDraw.Any(c=>c.Parent is not ExpressionStatementSyntax stmt || stmt.Parent!=draw.Body)) return Manual("conditional component rendering.");
         static int? Number(ExpressionSyntax e) => e is LiteralExpressionSyntax l && l.Token.Value is int value ? value : null;
         var sizes=new HashSet<(int Width,int Height)>();
         foreach(var call in calls.Where(BatchCall))
@@ -76,118 +76,7 @@ public static class GameOverlayInstaller
         if(CSharpSyntaxTree.ParseText(result).GetDiagnostics().Any(d=>d.Severity==DiagnosticSeverity.Error)) return Manual("generated adapter failed syntax checks.");
         return (result,$"{width}×{height} canvas added for resolution scaling and frame filters.");
     }
-    // Supports simple legacy XNA hosts that render their frame inside Update() and
-    // have no Draw() override. The batch must be balanced at the top level.
-    static bool IsUpdateRenderedHost(ClassDeclarationSyntax game, MethodDeclarationSyntax update,
-        MethodDeclarationSyntax? draw, out string batch)
-    {
-        batch = "";
-        if (draw != null || update.Body == null) return false;
-        var statements = update.Body.Statements;
-        if (statements.Count < 2 ||
-            statements[0] is not ExpressionStatementSyntax first ||
-            statements[^1] is not ExpressionStatementSyntax last ||
-            first.Expression is not InvocationExpressionSyntax begin ||
-            last.Expression is not InvocationExpressionSyntax end ||
-            begin.Expression is not MemberAccessExpressionSyntax beginAccess ||
-            end.Expression is not MemberAccessExpressionSyntax endAccess ||
-            beginAccess.Name.Identifier.ValueText != "Begin" ||
-            endAccess.Name.Identifier.ValueText != "End" ||
-            beginAccess.Expression.ToString() != endAccess.Expression.ToString()) return false;
-        batch = beginAccess.Expression.ToString();
-        string batchName = batch;
-        if (!game.Members.OfType<FieldDeclarationSyntax>()
-            .Where(f => Simple(f.Declaration.Type) == "SpriteBatch")
-            .SelectMany(f => f.Declaration.Variables)
-            .Any(v => v.Identifier.ValueText == batchName)) return false;
-        // Do not rewrite a pipeline with conditional returns, async work or custom targets.
-        if (update.Body.DescendantNodes().Any(n => n is ReturnStatementSyntax or
-            AwaitExpressionSyntax or YieldStatementSyntax)) return false;
-        var calls = update.Body.DescendantNodes().OfType<InvocationExpressionSyntax>();
-        if (calls.Any(c => c.Expression is MemberAccessExpressionSyntax a &&
-            (a.Name.Identifier.ValueText is "SetRenderTarget" or "SetRenderTargets"))) return false;
-        if (game.DescendantNodes().OfType<MethodDeclarationSyntax>().Any(m =>
-            m.Identifier.ValueText == "Draw")) return false;
-        return true;
-    }
-
-    // Bloom components composite after rendering to their own intermediate targets.
-    // Capture ONLY the final composite, not the intermediate blur passes.
-    static string? AddBloomCanvas(string text)
-    {
-        var tree = CSharpSyntaxTree.ParseText(text, new CSharpParseOptions(LanguageVersion.Preview));
-        var cls = tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>()
-            .SingleOrDefault(c => c.Identifier.ValueText == "BloomComponent" &&
-                c.BaseList?.Types.Any(t => Simple(t.Type) == "DrawableGameComponent") == true);
-        if (cls == null) return null;
-        if (cls.DescendantTokens().Any(t => t.ValueText == "__buildManagerBloomCanvas") ||
-            cls.Members.OfType<PropertyDeclarationSyntax>().Any(m => m.Identifier.ValueText is "BeginFinalComposite" or "EndFinalComposite")) return null;
-        var draw = cls.Members.OfType<MethodDeclarationSyntax>()
-            .SingleOrDefault(m => m.Identifier.ValueText == "Draw" && m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-        if (draw?.Body == null || draw.Body.DescendantNodes().OfType<ReturnStatementSyntax>().Any()) return null;
-        var statements = draw.Body.Statements;
-        // Require exactly one final composite, following a backbuffer reset.
-        var finalCalls = statements.OfType<ExpressionStatementSyntax>().Where(st =>
-            st.Expression is InvocationExpressionSyntax call &&
-            call.Expression is IdentifierNameSyntax id && id.Identifier.ValueText == "DrawFullscreenQuad" &&
-            call.ArgumentList.Arguments.Any(a => a.ToString().Contains("IntermediateBuffer.FinalResult", StringComparison.Ordinal))).ToArray();
-        if (finalCalls.Length != 1) return null;
-        var final = finalCalls[0];
-        var reset = statements.OfType<ExpressionStatementSyntax>().Where(st =>
-            st.SpanStart < final.SpanStart && st.Expression is InvocationExpressionSyntax call &&
-            call.Expression is MemberAccessExpressionSyntax access && access.Name.Identifier.ValueText == "SetRenderTarget" &&
-            call.ArgumentList.Arguments.Count == 1 && call.ArgumentList.Arguments[0].Expression.IsKind(SyntaxKind.NullLiteralExpression)).LastOrDefault();
-        if (reset == null) return null;
-        // No later render-target changes may invalidate the captured final frame.
-        if (statements.Where(st => st.SpanStart > reset.SpanStart && st.SpanStart < final.SpanStart)
-            .SelectMany(st => st.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            .Any(c => c.Expression is MemberAccessExpressionSyntax a && a.Name.Identifier.ValueText is "SetRenderTarget" or "SetRenderTargets")) return null;
-        var unload = cls.Members.OfType<MethodDeclarationSyntax>()
-            .SingleOrDefault(m => m.Identifier.ValueText == "UnloadContent" && m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-        if (unload != null && unload.Body == null) return null;
-        var changes = new List<TextChange> {
-            new(new TextSpan(cls.OpenBraceToken.Span.End, 0), "\n    private IndieGames.Overlay.GameCanvas? __buildManagerBloomCanvas;\n"),
-            new(new TextSpan(reset.Span.End, 0), "\n        __buildManagerBloomCanvas ??= new IndieGames.Overlay.GameCanvas(GraphicsDevice, 1280, 720);\n        __buildManagerBloomCanvas.Begin();"),
-            new(new TextSpan(final.Span.End, 0), "\n        __buildManagerBloomCanvas.Present();")
-        };
-        if (unload?.Body != null)
-            changes.Add(new(new TextSpan(unload.Body.OpenBraceToken.Span.End, 0), "\n        __buildManagerBloomCanvas?.Dispose();\n"));
-        else
-            changes.Add(new(new TextSpan(cls.CloseBraceToken.SpanStart, 0),
-                "\n    protected override void UnloadContent() { __buildManagerBloomCanvas?.Dispose(); base.UnloadContent(); }\n"));
-        var edited = SourceText.From(text).WithChanges(changes).ToString();
-        return CSharpSyntaxTree.ParseText(edited, new CSharpParseOptions(LanguageVersion.Preview))
-            .GetDiagnostics().Any(d => d.Severity == DiagnosticSeverity.Error) ? null : edited;
-    }
-
-    static OverlayInstallResult InstallBloom(string project, OverlayInstallResult result, CancellationToken token)
-    {
-        if (result.Status is not ("Installed" or "Already installed")) return result;
-        var folder = Path.GetDirectoryName(Path.GetFullPath(project))!;
-        // Only inspect source files under this project; never patch unrelated game archives.
-        var bloomFiles = SourceFiles(folder).Where(f => Path.GetFileName(f).Equals("BloomComponent.cs", StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (bloomFiles.Length == 0) return result;
-        if (bloomFiles.Length != 1) return result with { Message = result.Message + " Multiple BloomComponent.cs files; Bloom adapter needs review." };
-        string file = bloomFiles[0], original = File.ReadAllText(file);
-        if (original.Contains("__buildManagerBloomCanvas", StringComparison.Ordinal))
-            return result with { Message = result.Message + " Bloom canvas already integrated." };
-        string? edited = AddBloomCanvas(original);
-        if (edited == null) return result with { Message = result.Message + " Bloom pipeline not recognized; left unchanged." };
-        token.ThrowIfCancellationRequested();
-        if (File.ReadAllText(file) != original) return result with { Message = result.Message + " Bloom source changed; left unchanged." };
-        string backup = Backup(folder, project, file);
-        try { File.WriteAllText(file, edited); }
-        catch { File.WriteAllText(file, original); throw; }
-        return result with { Status = "Installed", Message = result.Message + " Bloom final-composite canvas integrated (1280x720); rebuild.", Backup = backup };
-    }
-
-    public static OverlayInstallResult Install(string project, string core, CancellationToken token = default)
-    {
-        var result = InstallCore(project, core, token);
-        return InstallBloom(project, result, token);
-    }
-
-    private static OverlayInstallResult InstallCore(string project,string core,CancellationToken token=default)
+    public static OverlayInstallResult Install(string project,string core,CancellationToken token=default)
     {
         project=Path.GetFullPath(project);core=Path.GetFullPath(core);string folder=Path.GetDirectoryName(project)!;
         if((File.GetAttributes(project)&FileAttributes.ReparsePoint)!=0)return new("Skipped","Linked project files require manual integration.");
@@ -246,51 +135,8 @@ public static class GameOverlayInstaller
                 foreach(var creation in program.Members.OfType<MethodDeclarationSyntax>().Where(m=>m.Identifier.ValueText=="Main").SelectMany(m=>m.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()))startupTypes.Add(Simple(creation.Type));
             foreach(var cls in tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>().Where(c=>c.BaseList?.Types.Any(b=>b.Type.ToString() is "Game" or "Microsoft.Xna.Framework.Game")==true))sources.Add((file,text,cls));
         }
-        if (sources.Count > 1)
-        {
-            // Only select a host when the evidence identifies exactly one candidate.
-            // A project may contain other mini-games, editors or unused Game subclasses.
-            var active = sources.Where(s => startupTypes.Contains(s.Class.Identifier.ValueText)).ToList();
-            if (active.Count == 1) sources = active;
-            else
-            {
-                var candidates = sources.Where(s =>
-                {
-                    var cls = s.Class;
-                    var ctor = cls.Members.OfType<ConstructorDeclarationSyntax>()
-                        .Where(c => !c.Modifiers.Any(SyntaxKind.StaticKeyword)).ToArray();
-                    var managers = cls.Members.OfType<FieldDeclarationSyntax>()
-                        .Where(f => Simple(f.Declaration.Type) == "GraphicsDeviceManager")
-                        .SelectMany(f => f.Declaration.Variables).ToArray();
-                    var update = cls.Members.OfType<MethodDeclarationSyntax>()
-                        .SingleOrDefault(m => m.Identifier.ValueText == "Update" && m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-                    var draw = cls.Members.OfType<MethodDeclarationSyntax>()
-                        .SingleOrDefault(m => m.Identifier.ValueText == "Draw" && m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-                    return ctor.Length == 1 && ctor[0].Body != null && managers.Length == 1 &&
-                        update?.Body != null && (draw?.Body != null ||
-                        IsUpdateRenderedHost(cls, update, draw, out _));
-                }).ToList();
-                if (candidates.Count == 1) sources = candidates;
-                else if (candidates.Count > 1)
-                {
-                    // Prefer a unique Update-rendering host only if no explicit
-                    // startup host was identified; never choose by filename alone.
-                    var updateHosts = candidates.Where(s =>
-                    {
-                        var update = s.Class.Members.OfType<MethodDeclarationSyntax>()
-                            .FirstOrDefault(m => m.Identifier.ValueText == "Update" && m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-                        var draw = s.Class.Members.OfType<MethodDeclarationSyntax>()
-                            .FirstOrDefault(m => m.Identifier.ValueText == "Draw" && m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-                        return update != null && IsUpdateRenderedHost(s.Class, update, draw, out _);
-                    }).ToList();
-                    if (updateHosts.Count == 1) sources = updateHosts;
-                }
-            }
-        }
-        if (sources.Count != 1)
-            return new("Skipped", $"Found {sources.Count} direct Game classes; no unique host identified: " +
-                string.Join(", ", sources.Select(s => Qualified(s.Class) + " [" + Path.GetFileName(s.Path) + "]")) +
-                ". Set StartupObject or provide a manual adapter.");
+        if(sources.Count>1){var active=sources.Where(s=>startupTypes.Contains(s.Class.Identifier.ValueText)).ToList();if(active.Count==1)sources=active;}
+        if(sources.Count!=1)return new("Skipped",$"Found {sources.Count} direct Game classes. Custom/inherited or multiple game hosts need manual integration.");
         var source=sources[0];var game=source.Class;
         var overlayFields=game.Members.OfType<FieldDeclarationSyntax>().Where(f=>Simple(f.Declaration.Type)=="GameSettingsOverlay").ToArray();
         if(overlayFields.Length>0)
@@ -316,17 +162,22 @@ public static class GameOverlayInstaller
         var managers=game.Members.OfType<FieldDeclarationSyntax>().Where(f=>Simple(f.Declaration.Type)=="GraphicsDeviceManager").SelectMany(f=>f.Declaration.Variables).ToArray();
         var update=game.Members.OfType<MethodDeclarationSyntax>().SingleOrDefault(m=>m.Identifier.ValueText=="Update"&&m.Modifiers.Any(SyntaxKind.OverrideKeyword));
         var draw=game.Members.OfType<MethodDeclarationSyntax>().SingleOrDefault(m=>m.Identifier.ValueText=="Draw"&&m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-        bool updateRendered = update != null && IsUpdateRenderedHost(game, update, draw, out _);
-        if(ctors.Length!=1 || ctors[0].Body==null || managers.Length!=1 || update?.Body==null || (!updateRendered && draw?.Body==null) || update.ParameterList.Parameters.Count!=1 || (!updateRendered && draw!.ParameterList.Parameters.Count!=1) || game.Modifiers.Any(SyntaxKind.PartialKeyword) || game.TypeParameterList!=null)return new("Skipped","Requires one complete non-generic Game class, one constructor/graphics manager, and a supported rendering pipeline. Complex hosts need manual integration.");
-        if(game.DescendantTokens().Any(t=>t.ValueText==Field || t.IsKind(SyntaxKind.IdentifierToken)&&t.ValueText.StartsWith("__overlay",StringComparison.Ordinal)) || (draw?.Body?.DescendantNodes().OfType<ReturnStatementSyntax>().Any() == true) || ctors[0].Body!.DescendantNodes().OfType<ReturnStatementSyntax>().Any())return new("Skipped","Custom return paths or conflicting overlay identifiers require manual integration.");
+        if(ctors.Length!=1 || ctors[0].Body==null || managers.Length!=1 || update?.Body==null || draw?.Body==null || update.ParameterList.Parameters.Count!=1 || draw.ParameterList.Parameters.Count!=1 || game.Modifiers.Any(SyntaxKind.PartialKeyword) || game.TypeParameterList!=null)return new("Skipped","Requires one complete non-generic Game class, one constructor/graphics manager, and Update/Draw method bodies. This host needs a manual adapter.");
+        if(game.DescendantTokens().Any(t=>t.ValueText==Field || t.IsKind(SyntaxKind.IdentifierToken)&&t.ValueText.StartsWith("__overlay",StringComparison.Ordinal)) || ctors[0].Body!.DescendantNodes().OfType<ReturnStatementSyntax>().Any())return new("Skipped","Constructor return paths or conflicting overlay identifiers require manual integration.");
+        // Early exits in Draw are supported only when they are ordinary return;
+        // statements directly in the method's control flow, not nested functions.
+        var drawReturns=draw.Body.DescendantNodes().OfType<ReturnStatementSyntax>().ToArray();
+        if(drawReturns.Any(r=>r.Expression!=null || r.Ancestors().TakeWhile(a=>a!=draw.Body).Any(a=>a is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or FinallyClauseSyntax)))
+            return new("Skipped","Complex Draw return paths require manual integration.");
         string manager=managers[0].Identifier.Text;
         bool knownCanvasHost=Property("AssemblyName")=="Manic Miner 360"&&game.Identifier.ValueText=="Game1" || Property("AssemblyName")=="Jet Set Willy 360"&&game.Identifier.ValueText=="ZXGame";
         bool canvas=knownCanvasHost && source.Text.Contains("ZxSpectrum",StringComparison.Ordinal) && game.Members.OfType<FieldDeclarationSyntax>().Any(f=>f.Declaration.Variables.Any(v=>v.Identifier.ValueText=="Settings"));
+        if(canvas && drawReturns.Length>0)return new("Skipped","Canvas hosts with early Draw returns need a dedicated canvas adapter.");
         if(canvas && game.DescendantTokens().Any(t=>t.ValueText=="__buildManagerCanvas"))return new("Skipped","A canvas identifier already exists; manual review is required.");
         bool initialized=ctors[0].Body!.Statements.OfType<ExpressionStatementSyntax>().Any(s=>s.Expression is AssignmentExpressionSyntax a && (a.Left.ToString()==manager || a.Left.ToString()=="this."+manager) && a.Right is ObjectCreationExpressionSyntax n && Simple(n.Type)=="GraphicsDeviceManager");
         if(!initialized)return new("Skipped","Could not verify graphics-manager initialization; source was left unchanged.");
-        var baseDraw=draw?.Body?.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(c=>CallsBase(c,"Draw")).ToArray() ?? Array.Empty<InvocationExpressionSyntax>();
-        if(baseDraw.Any(c=>c.Parent is not ExpressionStatementSyntax stmt || stmt.Parent!=draw?.Body))return new("Skipped","Conditional base.Draw calls require manual integration.");
+        var baseDraw=draw.Body.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(c=>CallsBase(c,"Draw")).ToArray();
+        if(baseDraw.Any(c=>c.Parent is not ExpressionStatementSyntax stmt || stmt.Parent!=draw.Body))return new("Skipped","Conditional base.Draw calls require manual integration.");
         string title=Property("AssemblyName");if(title.Length==0)title=Path.GetFileNameWithoutExtension(project);
         string literal=Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(title,true);
         string setup=$"\n\t\t{Field} = new IndieGames.Overlay.GameSettingsOverlay(this, {manager}) {{ Enabled = false, GameTitle = {literal} }};\n";
@@ -341,48 +192,36 @@ public static class GameOverlayInstaller
         if(source.Text.Contains("__BuildManagerOverlayBootstrap",StringComparison.Ordinal))return new("Needs review","A diagnostics bootstrap already exists; source was left unchanged.");
         string fields=$"\n\tprivate readonly IndieGames.Overlay.GameSettingsOverlay {Field};\n";
         if(canvas)fields+="\tprivate IndieGames.Overlay.GameCanvas? __buildManagerCanvas;\n";
-        if(updateRendered) fields += "\tprivate IndieGames.Overlay.GameCanvas? __buildManagerCanvas;\n";
-        string drawEnd=updateRendered ? "" : (canvas?"\n\t\t__buildManagerCanvas.Present(Settings.PixelFiltering);":"")+$"\n\t\tbase.Draw({draw!.ParameterList.Parameters[0].Identifier.Text});\n";
-        var changes=new List<TextChange>{new(new TextSpan(game.OpenBraceToken.Span.End,0),fields),new(new TextSpan(ctors[0].Body!.CloseBraceToken.SpanStart,0),setup),new(new TextSpan(update.Body.OpenBraceToken.Span.End,0),$"\n\t\t{Field}.Update({update.ParameterList.Parameters[0].Identifier.Text});\n\t\tif ({Field}.IsOpen) return;\n")};
-        if (updateRendered)
-        {
-            // The original SpriteBatch.Begin/End remain in Update. Capture the frame
-            // there, then present it in Draw before drawable components (F1 overlay).
-            changes.Add(new(new TextSpan(update.Body.Statements[0].SpanStart,0),
-                "__buildManagerCanvas ??= new IndieGames.Overlay.GameCanvas(GraphicsDevice, 1280, 720);\n\t\t__buildManagerCanvas.Begin();\n\t\t"));
-            changes.Add(new(new TextSpan(game.CloseBraceToken.SpanStart,0),
-                "\n\tprotected override void Draw(Microsoft.Xna.Framework.GameTime gameTime)\n\t{\n\t\t__buildManagerCanvas?.Present();\n\t\tbase.Draw(gameTime);\n\t}\n"));
-            var unloadUpdateHost=game.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(m=>m.Identifier.ValueText=="UnloadContent"&&m.Modifiers.Any(SyntaxKind.OverrideKeyword));
-            if(unloadUpdateHost?.Body!=null)
-                changes.Add(new(new TextSpan(unloadUpdateHost.Body.OpenBraceToken.Span.End,0),"\n\t\t__buildManagerCanvas?.Dispose();\n"));
-            else if(unloadUpdateHost==null)
-                changes.Add(new(new TextSpan(game.CloseBraceToken.SpanStart,0),"\n\tprotected override void UnloadContent() { __buildManagerCanvas?.Dispose(); base.UnloadContent(); }\n"));
-            else return new("Skipped","Custom content disposal requires manual integration.");
-        }
-        else changes.Add(new(new TextSpan(draw!.Body!.CloseBraceToken.SpanStart,0),drawEnd));
+        string drawEnd=(canvas?"\n\t\t__buildManagerCanvas.Present(Settings.PixelFiltering);":"")+$"\n\t\tbase.Draw({draw.ParameterList.Parameters[0].Identifier.Text});\n";
+        var changes=new List<TextChange>{new(new TextSpan(game.OpenBraceToken.Span.End,0),fields),new(new TextSpan(ctors[0].Body!.CloseBraceToken.SpanStart,0),setup),new(new TextSpan(update.Body.OpenBraceToken.Span.End,0),$"\n\t\t{Field}.Update({update.ParameterList.Parameters[0].Identifier.Text});\n\t\tif ({Field}.IsOpen) return;\n"),new(new TextSpan(draw.Body.CloseBraceToken.SpanStart,0),drawEnd)};
         changes.Add(new(new TextSpan(source.Text.Length,0),"\ninternal static class __BuildManagerOverlayBootstrap\n{\n\t[System.Runtime.CompilerServices.ModuleInitializer]\n\tinternal static void Capture() => IndieGames.Overlay.OverlayDiagnostics.StartCapture();\n}\n"));
-        if(canvas && draw?.Body is { } canvasDrawBody)
+        if(canvas)
         {
             string time=draw.ParameterList.Parameters[0].Identifier.Text;
-            changes.Add(new(new TextSpan(canvasDrawBody.OpenBraceToken.Span.End,0),$"\n\t\tif ({Field}.IsOpen && __buildManagerCanvas != null) {{ __buildManagerCanvas.PresentLastFrame(Settings.PixelFiltering); base.Draw({time}); return; }}\n\t\t__buildManagerCanvas ??= new IndieGames.Overlay.GameCanvas(GraphicsDevice,1280,720);\n\t\t__buildManagerCanvas.Begin();\n"));
-            foreach(var access in canvasDrawBody.DescendantNodes().OfType<MemberAccessExpressionSyntax>().Where(a=>a.Expression.ToString()==manager && a.Name.Identifier.ValueText is "PreferredBackBufferWidth" or "PreferredBackBufferHeight"))changes.Add(new(access.Span,access.Name.Identifier.ValueText=="PreferredBackBufferWidth"?"1280":"720"));
+            changes.Add(new(new TextSpan(draw.Body.OpenBraceToken.Span.End,0),$"\n\t\tif ({Field}.IsOpen && __buildManagerCanvas != null) {{ __buildManagerCanvas.PresentLastFrame(Settings.PixelFiltering); base.Draw({time}); return; }}\n\t\t__buildManagerCanvas ??= new IndieGames.Overlay.GameCanvas(GraphicsDevice,1280,720);\n\t\t__buildManagerCanvas.Begin();\n"));
+            foreach(var access in draw.Body.DescendantNodes().OfType<MemberAccessExpressionSyntax>().Where(a=>a.Expression.ToString()==manager && a.Name.Identifier.ValueText is "PreferredBackBufferWidth" or "PreferredBackBufferHeight"))changes.Add(new(access.Span,access.Name.Identifier.ValueText=="PreferredBackBufferWidth"?"1280":"720"));
             var unload=game.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(m=>m.Identifier.ValueText=="UnloadContent"&&m.Modifiers.Any(SyntaxKind.OverrideKeyword));
             if(unload?.Body!=null)changes.Add(new(new TextSpan(unload.Body.OpenBraceToken.Span.End,0),"\n\t\t__buildManagerCanvas?.Dispose();\n"));
             else if(unload==null)changes.Add(new(new TextSpan(game.CloseBraceToken.SpanStart,0),"\n\tprotected override void UnloadContent() { __buildManagerCanvas?.Dispose(); base.UnloadContent(); }\n"));
             else return new("Skipped","Custom content disposal requires manual canvas integration.");
         }
+        // The normal base.Draw call is moved to the end of Draw. Each earlier
+        // return must also invoke it so overlay components remain visible on
+        // menu and other early-exit screens (ABC Fun's menu path, for example).
+        // Preserve the original return and surrounding game logic.
+        string drawTime=draw.ParameterList.Parameters[0].Identifier.Text;
+        changes.AddRange(drawReturns.Select(r=>new TextChange(new TextSpan(r.SpanStart,0),$"base.Draw({drawTime}); ")));
         changes.AddRange(baseDraw.Select(c=>new TextChange(c.Parent!.Span,"")));
         string edited=SourceText.From(source.Text).WithChanges(changes).ToString();
         if(CSharpSyntaxTree.ParseText(edited,new CSharpParseOptions(LanguageVersion.Preview)).GetDiagnostics().Any(d=>d.Severity==DiagnosticSeverity.Error))return new("Skipped","Generated hooks failed syntax validation; source was left unchanged.");
         string canvasMessage = canvas ? "1280×720 canvas" : "";
-        if (!canvas && !updateRendered)
+        if (!canvas)
         {
             var parsed = CSharpSyntaxTree.ParseText(edited).GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>().Single(c=>Qualified(c)==Qualified(game));
             var adapted = AddCanvas(edited, parsed, Field);
             edited = adapted.Text;
             canvasMessage = adapted.Message;
         }
-        if(updateRendered) canvasMessage = "1280×720 Update-rendered canvas";
         bool referenceExists=references.Any(r=>r.EndsWith("IndieGames.Overlay."+backend+".csproj",StringComparison.OrdinalIgnoreCase));
         if(!referenceExists)root.Add(new XText("\n  "),new XElement(ns+"ItemGroup",LibraryReference()),new XText("\n"));
         string platformFile=Path.Combine(folder,"Properties","BuildManager.Overlay.Windows.cs");bool addPlatform=Property("GenerateAssemblyInfo").Equals("false",StringComparison.OrdinalIgnoreCase)&&!platformAttribute;

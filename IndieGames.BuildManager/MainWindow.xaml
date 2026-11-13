@@ -110,37 +110,52 @@
        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" TextElement.Foreground="#E5E7EB">
         <StackPanel Margin="5">
          <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="155"/><ColumnDefinition Width="155"/><ColumnDefinition Width="155"/><ColumnDefinition Width="190"/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text="Action"/><ComboBox x:Name="ActionBox" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="Build"/><ComboBoxItem Content="Rebuild"/><ComboBoxItem Content="Clean"/><ComboBoxItem Content="Restore"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="1"><TextBlock Text="Configuration"/><ComboBox x:Name="ConfigBox" Style="{StaticResource BuildChoice}" IsEditable="True" Text="Debug"><ComboBoxItem Content="Debug"/><ComboBoxItem Content="Release"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="2"><TextBlock Text="Architecture"/><ComboBox x:Name="TargetBox" SelectionChanged="BuildArchitecture_Changed" LostKeyboardFocus="BuildArchitecture_Changed" Style="{StaticResource BuildChoice}" IsEditable="True" Text="x64"><ComboBoxItem Content="x64"/><ComboBoxItem Content="x86"/><ComboBoxItem Content="AnyCPU"/></ComboBox></StackPanel>
           <StackPanel Grid.Column="3"><TextBlock Text="Network Backend"/><ComboBox x:Name="NetworkBackendBox" SelectionChanged="BuildProfile_Changed" Style="{StaticResource BuildChoice}" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="None"/><ComboBoxItem Content="NetStub"/><ComboBoxItem Content="Steamworks"/></ComboBox></StackPanel>
-          <StackPanel Grid.Column="4"><TextBlock Text="Game framework"/><ComboBox x:Name="GameFrameworkBox" Style="{StaticResource BuildChoice}" SelectionChanged="BuildProfile_Changed" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="FNA"/><ComboBoxItem Content="MonoGame"/><ComboBoxItem Content="XNA → FNA"/></ComboBox></StackPanel>
+          <StackPanel Grid.Column="4"><TextBlock Text="Game Framework"/><ComboBox x:Name="GameFrameworkBox" Style="{StaticResource BuildChoice}" SelectionChanged="BuildProfile_Changed" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="FNA"/><ComboBoxItem Content="MonoGame"/><ComboBoxItem Content="XNA → FNA"/></ComboBox></StackPanel>
          </Grid>
          <WrapPanel Margin="0,2">
-          <StackPanel x:Name="MonoGamePlatformPanel" MinWidth="160" Visibility="Collapsed"><TextBlock Text="MonoGame platform"/><ComboBox x:Name="MonoGamePlatformBox" Style="{StaticResource BuildChoice}" SelectionChanged="BuildProfile_Changed" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="DesktopGL"/><ComboBoxItem Content="WindowsDX"/></ComboBox></StackPanel>
-          <StackPanel x:Name="MonoGameVersionPanel" Width="135" Visibility="Collapsed"><TextBlock Text="MonoGame version"/><TextBox x:Name="MonoGameVersionBox" Text="3.8.1.303" ToolTip="Used when selecting a new MonoGame package; Project default retains the project's existing version."/></StackPanel>
+          <StackPanel x:Name="MonoGamePlatformPanel" MinWidth="160" Visibility="Collapsed"><TextBlock Text="MonoGame Platform"/><ComboBox x:Name="MonoGamePlatformBox" Style="{StaticResource BuildChoice}" SelectionChanged="BuildProfile_Changed" SelectedIndex="0"><ComboBoxItem Content="Project default"/><ComboBoxItem Content="DesktopGL"/><ComboBoxItem Content="WindowsDX"/></ComboBox></StackPanel>
+          <StackPanel x:Name="MonoGameVersionPanel" Width="135" Visibility="Collapsed"><TextBlock Text="MonoGame Version"/><TextBox x:Name="MonoGameVersionBox" Text="3.8.1.303" ToolTip="Used when selecting a new MonoGame package; Project default retains the project's existing version."/></StackPanel>
           <StackPanel x:Name="XnaConversionPanel" Margin="8,0" Visibility="Collapsed"><CheckBox Style="{StaticResource RepairCheckBox}" x:Name="ConvertXna3BuildBox" FontSize="14" MinHeight="28" VerticalContentAlignment="Center" Padding="5,0" Content="Convert XNA 3.x APIs Before Build" IsChecked="True" ToolTip="Explicit XNA → FNA source conversion; Python 3.10+ required. Creates a source backup."/><CheckBox Style="{StaticResource RepairCheckBox}" x:Name="ConvertSceneBuildBox" FontSize="14" MinHeight="28" VerticalContentAlignment="Center" Padding="5,0" Content="Repair Supported Scene Captures" ToolTip="Optional back-buffer capture repair for CRON, Avatar Insane Race 3D and Jet Pack War."/></StackPanel>
          </WrapPanel>
-         <CheckBox x:Name="AutoXnaRedirectBox" Style="{StaticResource RepairCheckBox}" Margin="8,2" Content="Redirect compatible XNA DLLs after successful build" ToolTip="Opt-in: scans original game DLLs, verifies against FNA, patches copies and installs into the selected architecture output."/>
+         <CheckBox x:Name="PrebuildXnaRedirectBox" Style="{StaticResource RepairCheckBox}" Margin="8,2" Content="Redirect Compatible XNA DLLs Before Build" ToolTip="Verifies original game DLLs, creates patched copies, backs up and updates project references before compilation. Originals are preserved."/>
+         <CheckBox x:Name="AutoXnaRedirectBox" Style="{StaticResource RepairCheckBox}" Margin="8,2" Content="Redirect Compatible XNA DLLs After Successful Build" ToolTip="Opt-in: scans original game DLLs, verifies against FNA, patches copies and installs into the selected architecture output."/>
          <TextBlock x:Name="BuildProfileNote" Text="Select a project to see its framework and available build options." TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Foreground="#93C5FD" FontSize="11" Margin="5,1"/>
-         <WrapPanel>
+         <WrapPanel VerticalAlignment="Top" ItemHeight="38">
           <Button Style="{StaticResource BuildAction}" Content="Build" Click="Build_Click" Background="#2563EB"/>
           <Button Style="{StaticResource BuildAction}" x:Name="RunGameButton" Content="Run Game" Click="RunGameButton_Click"/>
           <Button Style="{StaticResource BuildAction}" Content="Cancel" Click="Cancel_Click"/>
           <Button Content="Save Architecture to Selected Projects" Click="SaveArchitecture_Click" ToolTip="Save compiler architecture and default platform with backups. Build choices are temporary until saved; rebuild afterward."/>
-         <Expander Header="Advanced build settings" Foreground="#E5E7EB" Margin="8,6,3,3">
-          <StackPanel Margin="0,7,0,0">
-           <TextBlock Text="Framework override"/><TextBox x:Name="FrameworkBox"/>
-           <TextBlock Text="Runtime identifier override"/><TextBox x:Name="RuntimeBox"/>
-           <TextBlock Text="DefineConstants override"/><TextBox x:Name="DefineConstantsBox" ToolTip="Semicolon-separated symbols. Replaces project-defined symbols."/>
-           <CheckBox x:Name="NoRestoreBox" Content="Skip Restore" Margin="5"/>
-           <CheckBox x:Name="UseVsBox" Content="Use Visual Studio MSBuild" Margin="5"/>
-           <TextBox x:Name="MsbuildPathBox" ToolTip="Full path to MSBuild.exe"/>
-           <Button Content="Inspect Properties" Click="Inspect_Click" HorizontalAlignment="Left"/>
+         </WrapPanel>
+         <Expander Header="Advanced build settings" Foreground="#E5E7EB" Margin="4,4,3,2" HorizontalAlignment="Left" VerticalAlignment="Top" IsExpanded="False">
+          <StackPanel Margin="4,4,0,3" Width="480">
+           <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <TextBlock Text="Runtime override" VerticalAlignment="Center" ToolTip="Leave blank for automatic win-x86 / win-x64 selection."/>
+            <TextBox x:Name="RuntimeBox" Grid.Column="1" Text="" ToolTip="Optional runtime override. Leave blank to derive it from Architecture."/>
+           </Grid>
+           <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <TextBlock Text="Framework override" VerticalAlignment="Center"/>
+            <TextBox x:Name="FrameworkBox" Grid.Column="1"/>
+           </Grid>
+           <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <TextBlock Text="DefineConstants" VerticalAlignment="Center"/>
+            <TextBox x:Name="DefineConstantsBox" Grid.Column="1" ToolTip="Semicolon-separated symbols. Replaces project-defined symbols."/>
+           </Grid>
+           <WrapPanel Margin="0,4,0,0">
+            <CheckBox x:Name="NoRestoreBox" Content="Skip Restore" Margin="4"/>
+            <CheckBox x:Name="UseVsBox" Content="Use Visual Studio MSBuild" Margin="4"/>
+           </WrapPanel>
+           <TextBox x:Name="MsbuildPathBox" Margin="0,4,0,0" ToolTip="Full path to MSBuild.exe"/>
+           <Button Content="Inspect Properties" Click="Inspect_Click" HorizontalAlignment="Left" Margin="0,4,0,0"/>
           </StackPanel>
          </Expander>
-         </WrapPanel>
         </StackPanel>
        </ScrollViewer>
       </TabItem>

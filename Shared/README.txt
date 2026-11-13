@@ -1,0 +1,1 @@
+Replace the existing GameSettingsOverlay.cs in IndieGames.Overlay.FNA (and IndieGames.Overlay.MonoGame if it shares the source). Back up the original, rebuild the overlay project and ABC Fun, then restart the game. Change: F1 Settings hint text is vertically and horizontally centred accounting for glyph size and shadow. Not compiled/tested here.

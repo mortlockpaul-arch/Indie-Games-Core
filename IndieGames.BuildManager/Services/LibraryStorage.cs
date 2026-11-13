@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -39,13 +39,58 @@ public sealed class LibraryStorage
         File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); File.Move(temp, SettingsPath, true);
     }
     public string GameFolder(string project) => Path.Combine(Games, ProjectKey(project));
+    // One validated package for the XNA Python launcher, converter and manifest.
+    // Never combine files from different package versions.
+    public static string? FindRepairRoot()
+    {
+        var candidates = new List<string>();
+        for (DirectoryInfo? dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            candidates.Add(Path.Combine(dir.FullName, "tools", "XnaRepair"));
+            candidates.Add(Path.Combine(dir.FullName, "IndieGames.BuildManager", "tools", "XnaRepair"));
+            candidates.Add(Path.Combine(dir.FullName, "scripts"));
+        }
+        candidates.Add(@"C:\source\Indie-Games-Core\IndieGames.BuildManager\tools\XnaRepair");
+        candidates.Add(@"C:\source\Indie-Games-Core\tools\XnaRepair");
+        foreach (string candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            if (File.Exists(Path.Combine(candidate, "repair_manifest.json")) &&
+                File.Exists(Path.Combine(candidate, "run_repair.py")) &&
+                File.Exists(Path.Combine(candidate, "repair_xna3.py")))
+                return candidate;
+        return null;
+    }
+
+    public static string RequireRepairRoot()
+    {
+        return FindRepairRoot() ?? throw new FileNotFoundException(
+            "XNA repair package incomplete. Keep repair_manifest.json, run_repair.py and repair_xna3.py " +
+            "together under IndieGames.BuildManager\\tools\\XnaRepair (or the published scripts folder).");
+    }
+
     public string ScriptPath(string name)
     {
-        if (Path.GetFileName(name) != name) throw new ArgumentException("Use a script filename.", nameof(name));
-        // Prefer one shared library. Use the bundled snapshot only on machines
-        // where the shared folder is unavailable; do not mix versions per file.
-        string root = Directory.Exists(Scripts) ? Scripts : Path.Combine(AppContext.BaseDirectory, "scripts");
-        return Path.Combine(root, name);
+        if (string.IsNullOrWhiteSpace(name) || Path.GetFileName(name) != name)
+            throw new ArgumentException("Use a script filename.", nameof(name));
+
+        // These files must come from the same validated repair package.
+        if (name is "repair_manifest.json" or "run_repair.py" or "repair_xna3.py")
+            return Path.Combine(RequireRepairRoot(), name);
+
+        // Other scripts can remain in their existing configured/bundled locations.
+        string? repairRoot = FindRepairRoot();
+        if (repairRoot is not null)
+        {
+            string candidate = Path.Combine(repairRoot, name);
+            if (File.Exists(candidate)) return candidate;
+        }
+        string bundled = Path.Combine(AppContext.BaseDirectory, "scripts", name);
+        if (File.Exists(bundled)) return bundled;
+        if (!string.IsNullOrWhiteSpace(Scripts))
+        {
+            string legacy = Path.Combine(Scripts, name);
+            if (File.Exists(legacy)) return legacy;
+        }
+        throw new FileNotFoundException($"Script '{name}' not found in the repair package, bundled scripts or configured scripts directory.", name);
     }
     public static string ProjectKey(string project) => Path.GetFileNameWithoutExtension(project) + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(project).ToUpperInvariant())))[..10];
     public string SdkWorkingDirectory(string project)

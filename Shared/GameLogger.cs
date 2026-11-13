@@ -25,6 +25,10 @@ internal static class GameLogger
             if (string.IsNullOrWhiteSpace(logDir)) logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "IndieGames.BuildManager", "game-logs");
             Directory.CreateDirectory(logDir);
             _path = Path.Combine(logDir, gameName + ".log");
+            // Build Manager may tail this path even when console capture is enabled.
+            // Create the file before installing FirstChanceException diagnostics.
+            using (var logFile = new FileStream(_path, FileMode.OpenOrCreate,
+                       FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)) { }
             _captured = Environment.GetEnvironmentVariable("INDIE_GAME_CAPTURED") == "1";
             if (!_captured)
             {
@@ -53,6 +57,10 @@ internal static class GameLogger
             };
             AppDomain.CurrentDomain.FirstChanceException += (sender, args) =>
             {
+                // A log-tail poll can race with log creation/rotation. Don't report
+                // our own missing log as a game dependency failure.
+                if (args.Exception is FileNotFoundException missingLog &&
+                    IsOwnLogPath(missingLog.FileName)) return;
                 if (args.Exception is FileNotFoundException ||
                     args.Exception is FileLoadException ||
                     args.Exception is BadImageFormatException ||
@@ -69,6 +77,20 @@ internal static class GameLogger
         {
             System.Diagnostics.Debug.WriteLine("GameLogger init failed: " + ex);
         }
+    }
+
+    private static bool IsOwnLogPath(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(_path))
+            return false;
+        try
+        {
+            return string.Equals(Path.GetFullPath(fileName), Path.GetFullPath(_path),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException) { return false; }
+        catch (NotSupportedException) { return false; }
+        catch (PathTooLongException) { return false; }
     }
 
     internal static void Write(string message)

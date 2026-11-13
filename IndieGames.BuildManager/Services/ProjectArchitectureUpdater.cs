@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+using System.Linq;
 using System.Xml.Linq;
 
 namespace IndieGames.BuildManager.Services;
@@ -13,46 +15,69 @@ public static class ProjectArchitectureUpdater
     {
         architecture = architecture.Trim().ToLowerInvariant() switch
         {
-            "x86" => "x86", "x64" => "x64", "anycpu" => "AnyCPU",
+            "x86" => "x86",
+            "x64" => "x64",
+            "anycpu" => "AnyCPU",
             _ => throw new ArgumentException("Choose x86, x64 or AnyCPU.", nameof(architecture))
         };
+
         var document = XDocument.Load(projectPath, LoadOptions.PreserveWhitespace);
         var root = document.Root ?? throw new InvalidDataException("Project has no root element.");
         XNamespace ns = root.Name.Namespace;
-        string Read(string name) => root.Elements(ns + "PropertyGroup").Elements(ns + name)
-            .LastOrDefault()?.Value.Trim() ?? "";
-        var platforms = Read("Platforms").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        if (!platforms.Contains(architecture, StringComparer.OrdinalIgnoreCase)) platforms.Add(architecture);
-        string runtime = Read("RuntimeIdentifier");
-        if (architecture != "AnyCPU" && runtime.Length > 0)
+
+        // Do not remove or rewrite the project's own conditional PropertyGroups.
+        // Only replace groups previously created by this updater.
+        foreach (var old in root.Elements(ns + "PropertyGroup")
+                     .Where(g => (string?)g.Attribute("Label") == Label).ToList())
+            old.Remove();
+
+        string Read(string name) => root.Elements(ns + "PropertyGroup")
+            .Where(g => g.Attribute("Condition") == null)
+            .Elements(ns + name).LastOrDefault()?.Value.Trim() ?? "";
+
+        var platforms = Read("Platforms")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        foreach (string value in new[] { "x86", "x64", "AnyCPU" })
+            if (!platforms.Contains(value, StringComparer.OrdinalIgnoreCase)) platforms.Add(value);
+
+        string existingRid = Read("RuntimeIdentifier");
+        string Rid(string arch)
         {
-            int separator = runtime.LastIndexOf('-');
-            if (separator > 0 && runtime[(separator + 1)..] is "x86" or "x64" or "arm64" or "arm")
-                runtime = runtime[..(separator + 1)] + architecture;
+            if (arch == "AnyCPU") return "";
+            // Keep an existing Windows RID prefix, e.g. win10-x64 -> win10-x86.
+            int dash = existingRid.LastIndexOf('-');
+            string prefix = dash > 0 && existingRid.StartsWith("win", StringComparison.OrdinalIgnoreCase)
+                ? existingRid[..(dash + 1)] : "win-";
+            return prefix + arch;
         }
-        var group = root.Elements(ns + "PropertyGroup").FirstOrDefault(g => (string?)g.Attribute("Label") == Label);
-        // Put saved choices after project-local conditions so rescans and ordinary
-        // builds agree. Explicit MSBuild command-line overrides still take precedence.
-        group?.Remove();
-        group ??= new XElement(ns + "PropertyGroup", new XAttribute("Label", Label));
-        void Set(string name, string value) => group.SetElementValue(ns + name, value);
-        Set("Platform", architecture);
-        Set("PlatformTarget", architecture);
-        Set("Platforms", string.Join(';', platforms));
-        Set("Prefer32Bit", "false");
-        if (runtime.Length > 0) Set("RuntimeIdentifier", runtime);
-        // A saved choice applies across project-local configurations.
-        var names = new HashSet<string> { "Platform", "PlatformTarget", "Platforms", "Prefer32Bit", "RuntimeIdentifier" };
-        foreach (var propertyGroup in root.Elements(ns + "PropertyGroup").ToList())
+
+        // Never set $(Platform) here: it belongs to Visual Studio's solution mapping
+        // or to Build Manager's explicit -p:Platform=... command-line argument.
+        // Conditional groups ensure PlatformTarget and RID cannot disagree.
+        foreach (string value in new[] { "x86", "x64", "AnyCPU" })
         {
-            foreach (var property in propertyGroup.Elements().Where(e => names.Contains(e.Name.LocalName)).ToList())
-                property.Remove();
-            if (!propertyGroup.HasElements && !propertyGroup.Nodes().OfType<XComment>().Any())
-                propertyGroup.Remove();
+            var group = new XElement(ns + "PropertyGroup",
+                new XAttribute("Label", Label),
+                new XAttribute("Condition", $"'$(Platform)' == '{value}'"),
+                new XElement(ns + "PlatformTarget", value),
+                new XElement(ns + "Prefer32Bit", "false"),
+                new XElement(ns + "RuntimeIdentifier", Rid(value)));
+            root.Add(group);
         }
-        root.Add(new XText(Environment.NewLine + "  "), group, new XText(Environment.NewLine));
-        string backup = projectPath + ".before-architecture.bak";
-        if (!File.Exists(backup)) File.Copy(projectPath, backup);
+
+        // Default when a project is built without an explicit Platform. Do not
+        // force the Platform itself, and do not override explicit MSBuild -p values.
+        root.Add(new XElement(ns + "PropertyGroup",
+            new XAttribute("Label", Label),
+            new XAttribute("Condition", "'$(Platform)' == ''"),
+            new XElement(ns + "PlatformTarget", architecture),
+            new XElement(ns + "Prefer32Bit", "false"),
+            new XElement(ns + "RuntimeIdentifier", Rid(architecture))));
+
+        // A fresh backup every time, rather than a single stale backup.
+        string backup = projectPath + ".before-architecture-" +
+            DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + ".bak";
+        File.Copy(projectPath, backup);
         string temporary = projectPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -60,6 +85,7 @@ public static class ProjectArchitectureUpdater
             File.Move(temporary, projectPath, overwrite: true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
-        return new(architecture, string.Join(';', platforms), runtime);
+
+        return new ProjectArchitectureSettings(architecture, string.Join(';', platforms), Rid(architecture));
     }
 }

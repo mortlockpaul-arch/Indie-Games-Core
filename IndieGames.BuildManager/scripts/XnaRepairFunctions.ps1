@@ -187,45 +187,6 @@ function Repair-XnaColors {
                 }
             )
 
-            # Convert nested Color(Vector3) + byte alpha constructor.
-            # Limit this rewrite to .Alpha members (byte 0..255); do not
-            # assume that arbitrary float alpha expressions need /255f.
-            # Example: new Color(new Color(rgbVector), sprite.Alpha)
-            #       -> new Color(new Vector4(rgbVector, sprite.Alpha / 255f))
-            $nestedColorPattern = 'new\s+Color\s*\(\s*new\s+Color\s*\(\s*(?<rgb>[^;\r\n]+?)\s*\)\s*,\s*(?<alpha>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\.Alpha)\s*\)'
-            $s = [regex]::Replace($s, $nestedColorPattern, {
-                param($match)
-                $rgb = $match.Groups['rgb'].Value.Trim()
-                $alpha = $match.Groups['alpha'].Value
-                return 'new Color(new Microsoft.Xna.Framework.Vector4(' + $rgb + ', ' + $alpha + ' / 255f))'
-            })
-
-            # Add the FNA/XNA namespace when an unqualified Color type is used.
-            # Avoid changing files that explicitly use another Color type.
-            if ($s -match '(?<![\w.])(?:new\s+Color\s*\(|\bColor\s*\.|\bColor\s+[A-Za-z_]\w*)' -and
-                $s -notmatch '(?m)^\s*(?:global\s+)?using\s+Microsoft\.Xna\.Framework\s*;' -and
-                $s -notmatch '(?m)^\s*(?:global\s+)?using\s+(?:Color\s*=|System\.Drawing\s*;|System\.Windows\.Media\s*;)' -and
-                $s -notmatch '(?m)^\s*(?:class|struct|record|enum)\s+Color\b') {
-                # Place after any leading comments, directives and using statements,
-                # but before file-scoped or block namespace declarations.
-                $lines = [regex]::Split($s, '(\r\n|\n|\r)')
-                $newline = if ($s.Contains("`r`n")) { "`r`n" } else { "`n" }
-                $matches = [regex]::Matches($s, '(?m)^\s*(?:global\s+)?using\s+(?!static\s+)[^;\r\n]+;[ \t]*(?:\r?\n|\r)?')
-                if ($matches.Count -gt 0) {
-                    $last = $matches[$matches.Count - 1]
-                    $position = $last.Index + $last.Length
-                    $s = $s.Insert($position, 'using Microsoft.Xna.Framework;' + $newline)
-                }
-                else {
-                    # Insert before the first namespace or type declaration, keeping
-                    # header comments / #nullable / #pragma directives intact.
-                    $declaration = [regex]::Match($s, '(?m)^[ \t]*(?:namespace\s+|(?:public|internal|private|protected|sealed|abstract|static|partial|file|readonly|ref|unsafe)\s+)*(?:class|struct|interface|enum|record)\b|^[ \t]*namespace\s+')
-                    if ($declaration.Success) {
-                        $s = $s.Insert($declaration.Index, 'using Microsoft.Xna.Framework;' + $newline + $newline)
-                    }
-                }
-            }
-
             return $s
         }
 }
@@ -394,26 +355,66 @@ function Repair-XnaStorageLoad {
         return $s
     }
 }
-
 function Repair-XnaStoragePaths {
     [CmdletBinding(SupportsShouldProcess)]
-    param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [switch]$NoBackup
+    )
+
+    # Pass the game directory as -Root, not an individual source folder.
+    # Keep the save location stable across all source files in that game.
+    $gameName = Split-Path -Path (Resolve-Path -LiteralPath $Root).Path -Leaf
+    $safeGameName = [regex]::Replace($gameName, '[^\w.-]', '_')
+    $safeGameName = $safeGameName.Replace('"', '')
+    $savePath = 'System.IO.Path.Combine(' +
+        'System.Environment.GetFolderPath(' +
+        'System.Environment.SpecialFolder.LocalApplicationData), ' +
+        '"Indie-Games", "' + $safeGameName + '")'
+
     Invoke-XnaSourceFix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference -Transform {
         param($s)
-        # A direct Path.Combine(container.Path, name) inside a File call is unambiguous.
-        $file = 'Path\.Combine\(\s*(?<container>\w+)\.Path\s*,\s*(?<name>[^()\r\n]+?)\s*\)'
-        $s = [regex]::Replace($s, 'File\.Exists\(\s*' + $file + '\s*\)', {
-            param($m)
-            return $m.Groups['container'].Value + '.FileExists(' + $m.Groups['name'].Value.Trim() + ')'
-        })
-        $s = [regex]::Replace($s, 'File\.Open\(\s*' + $file + '\s*,\s*FileMode\.Open\s*\)', {
-            param($m)
-            return $m.Groups['container'].Value + '.OpenFile(' + $m.Groups['name'].Value.Trim() + ', FileMode.Open)'
-        })
-        $s = [regex]::Replace($s, 'File\.Open\(\s*' + $file + '\s*,\s*FileMode\.Create\s*\)', {
-            param($m)
-            return $m.Groups['container'].Value + '.CreateFile(' + $m.Groups['name'].Value.Trim() + ')'
-        })
+
+        # Only identifiers explicitly declared as StorageContainer are eligible.
+        # This includes fields such as `private StorageContainer container;`.
+        $names = @(
+            [regex]::Matches($s, '\bStorageContainer\s+(?<name>[A-Za-z_]\w*)\b') |
+                ForEach-Object { $_.Groups['name'].Value } |
+                Sort-Object -Unique
+        )
+        if ($names.Count -eq 0) { return $s }
+
+        foreach ($name in $names) {
+            $id = [regex]::Escape($name)
+            $pathCombine = 'Path\.Combine\(\s*' + $id + '\.Path\s*,\s*(?<filename>[^()\r\n]+?)\s*\)'
+
+            # Prefer the actual StorageContainer API for direct operations.
+            $s = [regex]::Replace($s,
+                'File\.Exists\(\s*' + $pathCombine + '\s*\)', {
+                    param($m)
+                    return $name + '.FileExists(' + $m.Groups['filename'].Value.Trim() + ')'
+                })
+            $s = [regex]::Replace($s,
+                'File\.Open\(\s*' + $pathCombine + '\s*,\s*FileMode\.Open\s*\)', {
+                    param($m)
+                    return $name + '.OpenFile(' + $m.Groups['filename'].Value.Trim() + ', FileMode.Open)'
+                })
+            $s = [regex]::Replace($s,
+                'File\.Open\(\s*' + $pathCombine + '\s*,\s*FileMode\.Create\s*\)', {
+                    param($m)
+                    return $name + '.CreateFile(' + $m.Groups['filename'].Value.Trim() + ')'
+                })
+
+            # A Path.Combine inside an assignment or ternary must yield a string.
+            # Directory.CreateDirectory returns DirectoryInfo; FullName is the
+            # resulting directory path. This is safe for read and write paths,
+            # idempotent, and avoids injecting statements into unknown scopes.
+            $replacement = 'System.IO.Directory.CreateDirectory(' + $savePath + ').FullName'
+            $s = [regex]::Replace($s, '(?<![\w.])' + $id + '\.Path\b', {
+                param($m)
+                return $replacement
+            })
+        }
         return $s
     }
 }
@@ -452,6 +453,29 @@ function Repair-XnaSignedInGamerAvatar {
         param($s)
         $pattern = 'if\s*\(\s*(?<gamer>\w+)\s*!=\s*null\s*&&\s*\k<gamer>\.Avatar\s*!=\s*null\s*\)\s*\{\s*return\s+\k<gamer>\.Avatar\s*;\s*\}'
         [regex]::Replace($s, $pattern, '')
+    }
+}
+
+
+# Targeted FNA premultiplied-alpha repair for legacy full-screen fade sprites.
+# Only named white fade overlays are rewritten; general Color usage is untouched.
+function Repair-XnaPremultipliedAlpha {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
+
+    Invoke-XnaSourceFix -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference -Transform {
+        param($s)
+
+        # Match whiteCover/menuFader.Color = new Color(255,255,255, alphaExpression);
+        # The alpha expression may include MathHelper.Clamp(...), but no nested
+        # semicolon or line break. Restrict to a simple statement on one line.
+        $pattern = '(?m)(?<lhs>\b(?:whiteCover|menuFader)\.Color\s*=\s*)new\s+Color\s*\(\s*(?:255|byte\.MaxValue)\s*,\s*(?:255|byte\.MaxValue)\s*,\s*(?:255|byte\.MaxValue)\s*,\s*(?<alpha>[^;\r\n]+?)\s*\)(?<tail>\s*;)'
+        $s = [regex]::Replace($s, $pattern, {
+            param($m)
+            $alpha = $m.Groups['alpha'].Value.Trim()
+            return $m.Groups['lhs'].Value + 'Color.FromNonPremultiplied(255, 255, 255, ' + $alpha + ')' + $m.Groups['tail'].Value
+        })
+        return $s
     }
 }
 
@@ -587,6 +611,16 @@ function Repair-XnaSpriteBatch {
         -Transform {
             param($s)
 
+            # XNA 3.x SpriteBlendMode was an enum; FNA uses BlendState objects.
+            # Restrict replacements to C# files referencing the legacy symbol.
+            # Convert members first, then type declarations/usages. This is idempotent.
+            if ($s -match '\bSpriteBlendMode\b') {
+                $s = [regex]::Replace($s, '\bSpriteBlendMode\s*\.\s*AlphaBlend\b', 'BlendState.AlphaBlend')
+                $s = [regex]::Replace($s, '\bSpriteBlendMode\s*\.\s*Additive\b', 'BlendState.Additive')
+                $s = [regex]::Replace($s, '\bSpriteBlendMode\s*\.\s*None\b', 'BlendState.Opaque')
+                $s = [regex]::Replace($s, '\bSpriteBlendMode\b', 'BlendState')
+            }
+
             # Convert single-BlendState calls, including custom batch variable names.
             # Anchor to a statement line to avoid changing examples in line comments
             # or ordinary strings. Already migrated calls do not match.
@@ -597,7 +631,7 @@ function Repair-XnaSpriteBatch {
             )
 
             # Convert the old XNA 3.x SpriteBatch.Begin overload.
-            $pattern = 'spriteBatch\.Begin\s*\(\s*SpriteBlendMode\.AlphaBlend\s*,\s*SpriteSortMode\.Immediate\s*,\s*SaveStateMode\.None\s*\)\s*;'
+            $pattern = 'spriteBatch\.Begin\s*\(\s*BlendState\.AlphaBlend\s*,\s*SpriteSortMode\.Immediate\s*,\s*SaveStateMode\.None\s*\)\s*;'
 
             $replacement = 'spriteBatch.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);'
 
@@ -619,6 +653,13 @@ function Repair-XnaSpriteBatch {
 
             return $s
         }
+}
+
+# Compatibility name for callers referring to the SpriteBatch Begin repair.
+function Repair-XnaSpriteBatchBegin {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$Root, [switch]$NoBackup)
+    Repair-XnaSpriteBatch -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference
 }
 
 function Invoke-XnaGame {
@@ -947,3 +988,19 @@ function Get-Dll-References
 #
 #.\Update-IndieGamesCoreSolution.ps1 -Execute
 
+
+
+# Combined Repair Center entry. Individual functions remain available for scripts.
+function Repair-XnaStorage {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [switch]$NoBackup
+    )
+
+    # Apply path-based rewrites last: Save/Load recognize container.Path patterns.
+    # Each repair honors WhatIf and uses the existing source-backup mechanism.
+    Repair-XnaStorageSave  -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference
+    Repair-XnaStorageLoad  -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference
+    Repair-XnaStoragePaths -Root $Root -NoBackup:$NoBackup -WhatIf:$WhatIfPreference
+}

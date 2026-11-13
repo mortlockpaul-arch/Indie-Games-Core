@@ -242,7 +242,12 @@ public sealed class GameSettingsOverlay : DrawableGameComponent
         int y = Math.Max(0,GraphicsDevice.Viewport.Height-38);
         Round(new Rectangle(x,y,width,28),Glass(15,29,24,200));
         Rect(new Rectangle(x+1,y+7,2,14),Accent);
-        Text(label,x+(width-textWidth)/2,y+4,Color.LightGray,scale);
+        // Centre the rendered glyphs, not just their advance widths.
+        // Glyphs are 26 pixels tall; the text shadow adds a small right/bottom extent.
+        int glyphHeight = (int)Math.Ceiling(26 * scale);
+        int textX = x + (width - textWidth) / 2 - 1;
+        int textY = y + (28 - glyphHeight) / 2 - 1;
+        Text(label,textX,textY,Color.LightGray,scale);
     }
     void ControllerIcon(string label,int x,int y,Color tint)
     {
@@ -428,12 +433,38 @@ public sealed class GameCanvas : IDisposable
     }
     public void Present(bool smooth=true)
     {
-        device.SetRenderTargets(previousTargets);device.Viewport=previousViewport;device.Clear(Color.Black);
-        float scale=Math.Min(previousViewport.Width/(float)target.Width,previousViewport.Height/(float)target.Height);
+        // A canvas cannot be sampled while it is bound as a render target.
+        // Nested Begin()/PresentLastFrame() calls may have saved this canvas in
+        // previousTargets, so do not blindly restore that binding.
+        bool previousContainsCanvas = Array.Exists(previousTargets,
+            binding => ReferenceEquals(binding.RenderTarget, target));
+        if (previousContainsCanvas)
+        {
+            device.SetRenderTarget(null);
+            var backBuffer = device.PresentationParameters;
+            device.Viewport = new Viewport(0, 0, backBuffer.BackBufferWidth, backBuffer.BackBufferHeight);
+        }
+        else
+        {
+            device.SetRenderTargets(previousTargets);
+            device.Viewport = previousViewport;
+        }
+        // Ensure that the canvas texture is not still bound as an output.
+        // This also handles Present() being called without a preceding Begin().
+        if (Array.Exists(device.GetRenderTargets(),
+            binding => ReferenceEquals(binding.RenderTarget, target)))
+        {
+            device.SetRenderTarget(null);
+            var backBuffer = device.PresentationParameters;
+            device.Viewport = new Viewport(0, 0, backBuffer.BackBufferWidth, backBuffer.BackBufferHeight);
+        }
+        Viewport outputViewport = device.Viewport;
+        device.Clear(Color.Black);
+        float scale=Math.Min(outputViewport.Width/(float)target.Width,outputViewport.Height/(float)target.Height);
         if(Filter==CanvasFilterMode.Integer&&scale>=1)scale=(float)Math.Floor(scale);
         int width=(int)Math.Round(target.Width*scale),height=(int)Math.Round(target.Height*scale);
         bool linear=Filter==CanvasFilterMode.Linear || Filter==CanvasFilterMode.GameDefault&&smooth;
-        var destination=new Rectangle((previousViewport.Width-width)/2,(previousViewport.Height-height)/2,width,height);
+        var destination=new Rectangle(outputViewport.X+(outputViewport.Width-width)/2,outputViewport.Y+(outputViewport.Height-height)/2,width,height);
         batch.Begin(SpriteSortMode.Deferred,BlendState.Opaque,linear?SamplerState.LinearClamp:SamplerState.PointClamp,DepthStencilState.None,RasterizerState.CullNone);
         float brightness=Math.Clamp(Brightness,0f,2f);
         batch.Draw(target,destination,new Color(Math.Min(brightness,1f),Math.Min(brightness,1f),Math.Min(brightness,1f),1f));batch.End();
